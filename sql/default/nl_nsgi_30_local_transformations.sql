@@ -237,7 +237,7 @@ VALUES
         'EPSG',
         '8666',
         'Geoid (height correction) model file',
-        'bq_nsgi_bongeo2004.gtx',
+        'nl_nsgi_bongeo2004.tif',
         NULL,
         NULL,
         NULL,
@@ -315,7 +315,7 @@ VALUES
         'EPSG',
         '8666',
         'Geoid (height correction) model file',
-        'nllat2018.gtx',
+        'nl_nsgi_nllat2018.tif',
         NULL,
         NULL,
         NULL,
@@ -341,7 +341,7 @@ VALUES
         'EPSG',
         '8666',
         'Geoid (height correction) model file',
-        'nllat2018.gtx',
+        'nl_nsgi_nllat2018.tif',
         NULL,
         NULL,
         NULL,
@@ -503,44 +503,3 @@ VALUES
         '1181'
     );
 
-INSERT INTO
-    grid_alternatives(
-        original_grid_name,
-        proj_grid_name,
-        old_proj_grid_name,
-        proj_grid_format,
-        proj_method,
-        inverse_direction,
-        package_name,
-        url,
-        direct_download,
-        open_license,
-        directory
-    )
-VALUES
-    (
-        'bq_nsgi_bongeo2004.gtx',
-        'bq_nsgi_bongeo2004.tif',
-        'bq_nsgi_bongeo2004.gtx',
-        'GTiff',
-        'geoid_like',
-        0,
-        NULL,
-        'https://github.com/GeodetischeInfrastructuur/transformations/releases/download/1.1.1/bq_nsgi_bongeo2004.tif',
-        1,
-        1,
-        NULL
-    ),
-    (
-        'nllat2018.gtx',
-        '',
-        'nllat2018.gtx',
-        'GTX',
-        'geoid_like',
-        0,
-        NULL,
-        'https://github.com/GeodetischeInfrastructuur/transformations/releases/download/1.1.1/nllat2018.gtx',
-        1,
-        1,
-        NULL
-    );
