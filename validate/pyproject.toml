@@ -5,7 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "pyproj>=3.7.0",
+    "pyproj>=3.7.2",
 ]
 
 [tool.uv]
