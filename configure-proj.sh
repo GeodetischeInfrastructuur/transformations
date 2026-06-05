@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -eu
 
+# get proj_dir with: PROJ_DIR=$(python -c 'import pyproj;print(pyproj.datadir.get_data_dir())')
 if [ $# -ne 3 ]; then
-    echo "$0 <proj-dir> <grids-dir> <sql-dir>"
+    echo "$0 <proj-dir> <sql-dir> <grids-dir>"
     exit 1
 fi
 

@@ -1,10 +1,10 @@
 # Transformations
 
 [![GitHub
-license](https://img.shields.io/github/license/GeodetischeInfrastructuur/Transformations)](https://github.com/GeodetischeInfrastructuur/Transformations/blob/master/LICENSE) [![Static Badge](https://img.shields.io/badge/%20ghcr.io-geodetischeinfrastructuur%2Ftransformations-green?)](https://ghcr.io/geodetischeinfrastructuur/transformations) [![GitHub Release](https://img.shields.io/github/v/release/GeodetischeInfrastructuur/transformations)](https://github.com/GeodetischeInfrastructuur/transformations/releases)
+license](https://img.shields.io/github/license/GeodetischeInfrastructuur/Transformations)](https://github.com/GeodetischeInfrastructuur/Transformations/blob/master/LICENSE) [![Static Badge](https://img.shields.io/badge/%20ghcr.io-geodetischeinfrastructuur%2Ftransformations-green?)](https://ghcr.io/geodetischeinfrastructuur/transformations) [![GitHub Release](https://img.shields.io/github/v/release/GeodetischeInfrastructuur/transformations)](https://github.com/GeodetischeInfrastructuur/transformations/releases) [![PROJ](https://img.shields.io/badge/PROJ-9.5.0-blue)](https://proj.org/) [![pyproj](https://img.shields.io/badge/pyproj-3.7.0-blue)](https://pyproj4.github.io/pyproj/)
 
 This repository contains a modified proj.db that implements the following
-transformations according to the recommendations of the [NSGI](https://www.nsgi.nl/) (see image below).
+transformations according to the recommendations of the NSGI (see image below).
 
 ![transformations](supported-transformations-nsgi.drawio.svg)
 
@@ -45,96 +45,157 @@ repository.
 > ln -s proj.time.dependent.transformations.db proj.db
 > ```
 
-## Docker
+## Integration
 
-The [Docker image](./Dockerfile) is intended to be used as a base image, for applications that
-layer on top of PROJ; for instance use it with
-[pyproj](https://pyproj4.github.io/pyproj/stable/index.html), see the [`validate/Dockerfile`](validate/Dockerfile) file in this repo for an example.
+There are two ways to use the NSGI-configured PROJ in your own environment.
 
-The Docker image is published on the Github container registry: [ghcr.io/geodetischeinfrastructuur/transformations](https://ghcr.io/geodetischeinfrastructuur/transformations).
+### 1. Use the Docker image directly
 
-### Build
+Use `ghcr.io/geodetischeinfrastructuur/transformations:latest` as a base image or run it directly. This gives you a fully configured `libproj` with the NSGI `proj.db` and correction grids. Suitable for:
 
-```bash
-docker build -t geodetischeinfrastructuur/transformations:latest .
-```
-
-### Run
-
-To start an interactive terminal inside the container run:
+- **C/C++ applications** that link against `libproj`
+- **OSGEO command-line tools** that use `libproj` under the hood: `cs2cs`, `projinfo`, `gdal`, `ogr2ogr`, etc.
 
 ```bash
-docker run -it --rm geodetischeinfrastructuur/transformations:latest
+# Example: transform a coordinate with cs2cs
+docker run --rm ghcr.io/geodetischeinfrastructuur/transformations:latest \
+  sh -c 'echo "52.115330444 7.684748554 41.4160" | cs2cs -f "%.4f" EPSG:7931 EPSG:7415'
 ```
 
-To invoke `projinfo` from your current terminal sessions run:
+> **NOTE:** for prod environments it is recommended to pin the docker image to a specific version, see [pkgs/container/transformations](https://github.com/GeodetischeInfrastructuur/transformations/pkgs/container/transformations).
+
+```dockerfile
+# Example: use as base image
+FROM ghcr.io/geodetischeinfrastructuur/transformations:latest
+RUN apt-get install -y my-libproj-dependent-app
+```
+
+### 2. Copy the proj data directory into your Python environment
+
+`pyproj` bundles its own PROJ library and data directory. To use the NSGI-configured `proj.db` and grids, copy the full `/usr/share/proj/` from the Docker image into pyproj's data directory.
+
+This works for:
+
+- **Local Python environments** (virtualenv, conda, uv)
+- **QGIS** (replace the proj data dir used by QGIS's bundled PROJ)
+- **Python Docker containers** (see [`validate/Dockerfile`](validate/Dockerfile) for a working example)
+
+**Locally:**
 
 ```bash
-docker run --rm geodetischeinfrastructuur/transformations:latest projinfo
+id=$(docker create ghcr.io/geodetischeinfrastructuur/transformations:latest)
+docker cp "$id:/usr/share/proj/." "$(python -c 'import pyproj;print(pyproj.datadir.get_data_dir())')"
+docker rm "$id"
 ```
 
-To verify if the NSGI transformation EPSG:7931 -> EPSG:7415 works as expected, run the following in a terminal:
+**In a Dockerfile** (multi-stage, copies into pyproj's bundled data dir):
 
-```bash
-docker build validate/ -t geodetischeinfrastructuur/validate-transformations:latest 
-docker run --rm -it geodetischeinfrastructuur/validate-transformations:latest python
+```dockerfile
+FROM ghcr.io/geodetischeinfrastructuur/transformations:latest AS transformations
+
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+ARG PYTHON_VERSION=3.12
+WORKDIR /app
+COPY pyproject.toml uv.lock ./
+RUN uv sync
+COPY --from=transformations /usr/share/proj/ \
+     "/app/.venv/lib/python${PYTHON_VERSION}/site-packages/pyproj/proj_dir/share/proj"
+ENV PATH="/app/.venv/bin:$PATH"
 ```
 
-Then run the following Python code:
+### 3. Manual setup for local Python environments
 
-```python
-from pyproj import transformer
-etrf = transformer.TransformerGroup("EPSG:7931", "EPSG:7415")
-"{0[0]:.4f} {0[1]:.4f} {0[2]:.4f}".format(etrf.transformers[0].transform(52.115330444, 7.684748554, 41.4160))
+If Docker is unavailable, configure pyproj manually. This requires cloning this repository.
+
+```sh
+proj_dir=$(python -c 'import pyproj;print(pyproj.datadir.get_data_dir())')
+./configure-proj.sh "$proj_dir" ./sql ./grids
+# pyproj installation does not come pre installed with all grids, download grids for nl_nsgi
+projsync --source-id nl_nsgi --target-dir "$proj_dir"
+# or use --all (+700 MB)
+# projsync --all --target-dir "$proj_dir"
+# or use pyproj with environment variable to downlaod grids automatically as needed
+# export PROJ_NETWORK=ON
 ```
-
-Alternatively the following [cs2cs](https://proj.org/en/stable/apps/cs2cs.html) command
-can be used:
-
-```bash
-cs2cs -f "%.4f" EPSG:7931 EPSG:7415 <<< "52.115330444 7.684748554 41.4160"
-```
-
-Both should result in the following output: `'312352.6004 461058.5812 -2.5206'`
 
 ## Validation
 
-Running the full validation file can be done by running the following docker run
-command.
+### Manual validation transformations
+
+To verify that NSGI transformations are correctly installed in the local PROJ environment, you can use the `cs2cs` command to transform coordinates:
 
 ```bash
-mkdir -p output # required otherwise output folder is created owned with root
-docker run -u "$(id -u):$(id -g)" --rm -v $(pwd)/output:/output -t geodetischeinfrastructuur/validate-transformations:latest python /app/validate.py /app/validate_ETRS89andRDNAP.txt /output/validate-output.csv
+docker build -t transformations .
+docker run --rm transformations sh -c 'echo "52.115330444 7.684748554 41.4160" | cs2cs -f "%.4f" EPSG:7931 EPSG:7415'
 ```
 
-Or by running the Python script directly.
+Expected output:
+
+```txt
+312352.6004 461058.5812 -2.5206
+```
+
+### Manual validation transformation-validate pyproj
+
+To verify that NSGI transformations are correcly installed in pyproj environment run the following docker/python command:
 
 ```bash
-cd validate/
-uv sync # setuppython  environment with uv
-direnv allow # only on installation, every subsequent opening of the workspace will activate the uv managed env, see "direnv config" section in this readme
-../configure-proj.sh $(python -c 'import pyproj;print(pyproj.datadir.get_data_dir());') ../sql ../grids/nl_nsgi # note configure-proj.sh can only be run once since the sql commands will fail if applied multiple times
-python validate.py validate_ETRS89andRDNAP.txt ../output/validate-output.csv
+docker build -t transformations-validate ./validate
+docker run --rm transformations-validate python -c '
+from pyproj import transformer
+etrf = transformer.TransformerGroup("EPSG:7931", "EPSG:7415")
+result = etrf.transformers[0].transform(52.115330444, 7.684748554, 41.4160)
+print("{0[0]:.4f} {0[1]:.4f} {0[2]:.4f}".format(result))
+'
 ```
 
-When the validation result is `OK` output (stdout) is:
+Expected output:
 
 ```txt
-validation result: OK
-message: all points transformed and validated succesfully, output saved in output/validate-output.csv
+312352.6004 461058.5812 -2.5206
 ```
 
-When the validation result is `FAILED` output (stderr) is:
+### Validate transformation accuracy with NSGI validation service
 
-```txt
-validation result: FAILED
-message: accurate transformation of one or more points failed (242), invalid points saved in /output/validate-output.invalid.csv, all points saved in /output/validate-output.csv
+Use the official [NSGI validation service](https://www.nsgi.nl/coordinatenstelsels-en-transformaties/tools/validatieservice) to verify transformation accuracy. The service tests transformations between EPSG:7931 (ETRS89) and EPSG:7415 (RDNAP) and returns an accuracy score. The transformation direction is determined automatically based on feature IDs in the input dataset:
+
+| first feature fid | source crs | target crs |
+| :--- | :--- | :--- |
+| 20020000 | EPSG:7931 | EPSG:7415 |
+| 10020000 | EPSG:7415 | EPSG:7931 |
+
+Download the test datasets, transform them with this tool, and upload the results:
+
+```sh
+docker build -t transformations-validate ./validate
+(
+    cd validate
+    curl -o 002_RDNAP.txt 'https://www.nsgi.nl/documents/1888506/1945213/002_RDNAP.txt/5d6dc6b8-a59d-40d0-0363-8a9b59e51c62?t=1574879689583'
+    curl -o 002_ETRS89.txt 'https://www.nsgi.nl/documents/1888506/1944539/002_ETRS89.txt/6aa954da-d345-de97-386a-4fbd956edf52?t=1574879755720'
+)
+
+docker run -v $(pwd)/validate:/data \
+  transformations-validate \
+  transform-csv /data/002_ETRS89.txt /data/002_ETRS89_transformed.txt
+
+docker run -v $(pwd)/validate:/data \
+  transformations-validate \
+  python transform-csv /data/002_RDNAP.txt /data/002_RDNAP_transformed.txt
 ```
 
-### direnv config
+Upload the generated files to the [validation service](https://www.nsgi.nl/coordinatenstelsels-en-transformaties/tools/validatieservice). The score must be 100% for *Netherlands+EEZ*.
 
-Repository also contains a [`.envrc`](https://direnv.net/) config file, which automatically activates the `uv` managed
-virtual environment. See the [direnv wiki](https://github.com/direnv/direnv/wiki/Python#uv) for how to set this up.
+### Validate transformation accuracy with reference coordinates
+
+Validate transformation accuracy against reference coordinates. The file `Z001_ETRS89andRDNAP.txt` contains verified coordinate pairs in both ETRS89 and RDNAP. The script transforms each set and calculates deviation from the known values—measuring transformation accuracy.
+
+```bash
+docker run -v $(pwd)/validate/data:/data transformations-validate python validate.py /data/Z001_ETRS89andRDNAP.txt /data/Z001_ETRS89andRDNAP_transformed.csv
+```
+
+This outputs `validate/data/Z001_ETRS89andRDNAP_transformed.csv` file. If correct, the transformed coordinates will have minimal deviation from the known coordinates.
+
+<!-- TODO: add check to verify if deviations are within a certain threshold. -->
 
 ## LICENSE
 
