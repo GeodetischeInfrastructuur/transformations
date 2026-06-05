@@ -1,7 +1,7 @@
 # Transformations
 
 [![GitHub
-license](https://img.shields.io/github/license/GeodetischeInfrastructuur/Transformations)](https://github.com/GeodetischeInfrastructuur/Transformations/blob/master/LICENSE) [![Static Badge](https://img.shields.io/badge/%20ghcr.io-geodetischeinfrastructuur%2Ftransformations-green?)](https://ghcr.io/geodetischeinfrastructuur/transformations) [![GitHub Release](https://img.shields.io/github/v/release/GeodetischeInfrastructuur/transformations)](https://github.com/GeodetischeInfrastructuur/transformations/releases) [![PROJ](https://img.shields.io/badge/PROJ-9.5.0-blue)](https://proj.org/) [![pyproj](https://img.shields.io/badge/pyproj-3.7.0-blue)](https://pyproj4.github.io/pyproj/)
+license](https://img.shields.io/github/license/GeodetischeInfrastructuur/Transformations)](https://github.com/GeodetischeInfrastructuur/Transformations/blob/master/LICENSE) [![Static Badge](https://img.shields.io/badge/%20ghcr.io-geodetischeinfrastructuur%2Ftransformations-green?)](https://ghcr.io/geodetischeinfrastructuur/transformations) [![GitHub Release](https://img.shields.io/github/v/release/GeodetischeInfrastructuur/transformations)](https://github.com/GeodetischeInfrastructuur/transformations/releases) [![PROJ](https://img.shields.io/badge/PROJ-9.7.1-blue)](https://proj.org/) [![pyproj](https://img.shields.io/badge/pyproj-3.7.2-blue)](https://pyproj4.github.io/pyproj/)
 
 This repository contains a modified proj.db that implements the following
 transformations according to the recommendations of the NSGI (see image below).
@@ -103,6 +103,8 @@ COPY --from=transformations /usr/share/proj/ \
 ENV PATH="/app/.venv/bin:$PATH"
 ```
 
+See also [`./validate/Dockerfile`](./validate/Dockerfile).
+
 ### 3. Manual setup for local Python environments
 
 If Docker is unavailable, configure pyproj manually. This requires cloning this repository.
@@ -120,9 +122,9 @@ projsync --source-id nl_nsgi --target-dir "$proj_dir"
 
 ## Validation
 
-### Manual validation transformations
+### Manual validation transformations PROJ
 
-To verify that NSGI transformations are correctly installed in the local PROJ environment, you can use the `cs2cs` command to transform coordinates:
+To verify that NSGI transformations are correctly installed in the  PROJ environment, you can use the `cs2cs` command to transform coordinates:
 
 ```bash
 docker build -t transformations .
@@ -135,7 +137,7 @@ Expected output:
 312352.6004 461058.5812 -2.5206
 ```
 
-### Manual validation transformation-validate pyproj
+### Manual validation transformations pyproj
 
 To verify that NSGI transformations are correcly installed in pyproj environment run the following docker/python command:
 
@@ -157,7 +159,7 @@ Expected output:
 
 ### Validate transformation accuracy with NSGI validation service
 
-Use the official [NSGI validation service](https://www.nsgi.nl/coordinatenstelsels-en-transformaties/tools/validatieservice) to verify transformation accuracy. The service tests transformations between EPSG:7931 (ETRS89) and EPSG:7415 (RDNAP) and returns an accuracy score. The transformation direction is determined automatically based on feature IDs in the input dataset:
+Use the [NSGI validation service](https://www.nsgi.nl/coordinatenstelsels-en-transformaties/tools/validatieservice) to verify transformation accuracy. The service tests transformations between EPSG:7931 (ETRS89) and EPSG:7415 (RDNAP) and returns an accuracy score. The transformation direction is determined automatically based on feature IDs in the input dataset:
 
 | first feature fid | source crs | target crs |
 | :--- | :--- | :--- |

@@ -1,4 +1,4 @@
-FROM osgeo/proj:9.5.0
+FROM osgeo/proj:9.7.1
 RUN apt-get -y update &&  \
     apt-get install --no-install-recommends -y \
     sqlite3 && \
