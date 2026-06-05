@@ -99,6 +99,7 @@ Both should result in the following output: `'312352.6004 461058.5812 -2.5206'`
 
 ## Validation
 
+<<<<<<< Updated upstream
 Running the full validation file can be done by running the following docker run
 command.
 
@@ -135,6 +136,9 @@ message: accurate transformation of one or more points failed (242), invalid poi
 
 Repository also contains a [`.envrc`](https://direnv.net/) config file, which automatically activates the `uv` managed
 virtual environment. See the [direnv wiki](https://github.com/direnv/direnv/wiki/Python#uv) for how to set this up.
+=======
+Zie [validate/](validate/README.md).
+>>>>>>> Stashed changes
 
 ## LICENSE
 

@@ -3,7 +3,7 @@ ARG PYTHON_VERSION=3.12
 # --build-arg TRANSFORMATION_IMAGE_SOURCE=""
 ARG TRANSFORMATION_IMAGE_SOURCE=ghcr.io/
 
-FROM ${TRANSFORMATION_IMAGE_SOURCE}geodetischeinfrastructuur/transformations:latest as transformations
+FROM ${TRANSFORMATION_IMAGE_SOURCE}geodetischeinfrastructuur/transformations:latest AS transformations
 
 FROM ghcr.io/astral-sh/uv:python${PYTHON_VERSION}-bookworm-slim
 
