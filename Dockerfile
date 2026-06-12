@@ -15,6 +15,5 @@ RUN apt-get -y update &&  \
     sqlite3 && \
     rm -rf /var/lib/apt/lists/*
 COPY sql /sql
-COPY grids/nl_nsgi/ /grids
 COPY configure-proj.sh /configure-proj.sh
-RUN /configure-proj.sh /usr/share/proj /sql /grids
+RUN /configure-proj.sh /usr/share/proj /sql

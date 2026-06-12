@@ -88,7 +88,7 @@ There are three options to use the NSGI-configured PROJ in your own environment.
 
 ### 1. Use the transformations Docker image
 
-Use `ghcr.io/geodetischeinfrastructuur/transformations:latest` as a base image or run it directly. This gives you a fully configured `libproj` with the NSGI `proj.db` and correction grids. Suitable for:
+Use `ghcr.io/geodetischeinfrastructuur/transformations:latest` as a base image or run it directly. This gives you a fully configured `libproj` with the NSGI `proj.db`. Suitable for:
 
 - **C/C++ applications** that link against `libproj`
 - **OSGEO command-line tools** that use `libproj` under the hood: `cs2cs`, `projinfo`, `gdal`, `ogr2ogr`, etc.
@@ -111,7 +111,9 @@ RUN apt-get install -y my-libproj-dependent-app
 
 The release workflow publishes a custom `pyproj` wheel as a GitHub release asset. As built today, that wheel is for Linux `amd64` (`x86_64`) and CPython `3.12` only.
 
-The wheel contains the Python package, compiled extension, and the NSGI custom PROJ data directory (`proj.db` and grids) bundled inside it. No additional data directory setup is needed after installation.
+The wheel contains the Python package, compiled extension, and the NSGI custom PROJ databases (`proj.db` and `proj.time.dependent.transformations.db`). Grid files are **not** included to keep the wheel size minimal. Users must either:
+- Set `PROJ_NETWORK=ON` to download grids on-demand
+- Or download grids manually and point via `PROJ_DATA` environment variable
 
 If you use `uv`, point your project at the published wheel with a direct URL dependency. The simplest form is to replace the PyPI dependency with the release asset URL:
 
@@ -134,7 +136,11 @@ dependencies = [
 pyproj = { url = "https://github.com/GeodetischeInfrastructuur/transformations/releases/download/9.7.1-post1/pyproj-3.7.2.post1-cp312-cp312-linux_x86_64.whl" }
 ```
 
-After updating `pyproject.toml`, run `uv lock` and `uv sync`.
+After updating `pyproject.toml`, run `uv lock` and `uv sync`. To enable grid downloads, set the environment variable:
+
+```bash
+export PROJ_NETWORK=ON
+```
 
 This wheel is intended for local Python environments and Docker images that run on Linux `amd64` with Python `3.12`. For other platforms or Python versions, use the Docker image or build from source instead.
 
@@ -144,13 +150,13 @@ If Docker is unavailable, configure pyproj manually. This requires cloning this 
 
 ```sh
 proj_dir=$(python -c 'import pyproj;print(pyproj.datadir.get_data_dir())')
-./configure-proj.sh "$proj_dir" ./sql ./grids
-# pyproj installation does not come pre installed with all grids, download grids for nl_nsgi
+./configure-proj.sh "$proj_dir" ./sql
+# Download grids for NSGI transformations
 projsync --source-id nl_nsgi --target-dir "$proj_dir"
-# or use --all (+700 MB)
+# or use --all (+700 MB) to download all grids
 # projsync --all --target-dir "$proj_dir"
-# or use pyproj with environment variable to downlaod grids automatically as needed
-# export PROJ_NETWORK=ON
+# or enable on-demand grid downloads via network
+export PROJ_NETWORK=ON
 ```
 
 ## Building Images Locally
@@ -245,14 +251,16 @@ Expected output:
 To verify that NSGI transformations are correctly installed via the published wheel, run the following command (requires Linux `amd64` and Python `3.12`):
 
 ```bash
-WHEEL_URL="https://github.com/GeodetischeInfrastructuur/transformations/releases/download/9.7.1-post1/pyproj-3.7.2.post1-cp312-cp312-linux_x86_64.whl"
-uv run --with "pyproj @ $WHEEL_URL" python -c '
+WHEEL_URL="https://github.com/GeodetischeInfrastructuur/transformations/releases/download/9.7.1-post1-rc3/pyproj-3.7.2.post1-cp312-cp312-linux_x86_64.whl"
+PROJ_NETWORK=ON uv run --with "pyproj @ $WHEEL_URL" python -c '
 from pyproj import transformer
 etrf = transformer.TransformerGroup("EPSG:7931", "EPSG:7415")
 result = etrf.transformers[0].transform(52.115330444, 7.684748554, 41.4160)
 print("{0[0]:.4f} {0[1]:.4f} {0[2]:.4f}".format(result))
 '
 ```
+
+(The `PROJ_NETWORK=ON` environment variable enables automatic grid downloads. Without it, you must download the required grid files manually.)
 
 
 
@@ -281,9 +289,9 @@ Download the test datasets, transform them with this tool, and upload the result
 )
 
 WHEEL_URL="https://github.com/GeodetischeInfrastructuur/transformations/releases/download/9.7.1-post1/pyproj-3.7.2.post1-cp312-cp312-linux_x86_64.whl"
-uv run --with "pyproj @ $WHEEL_URL" \
+PROJ_NETWORK=ON uv run --with "pyproj @ $WHEEL_URL" \
   python pyproj/transform_csv.py pyproj/002_ETRS89.txt pyproj/002_ETRS89_transformed.txt
-uv run --with "pyproj @ $WHEEL_URL" \
+PROJ_NETWORK=ON uv run --with "pyproj @ $WHEEL_URL" \
   python pyproj/transform_csv.py pyproj/002_RDNAP.txt pyproj/002_RDNAP_transformed.txt
 ```
 
@@ -295,8 +303,8 @@ Validate transformation accuracy against reference coordinates. The file `Z001_E
 
 ```bash
 WHEEL_URL="https://github.com/GeodetischeInfrastructuur/transformations/releases/download/9.7.1-post1/pyproj-3.7.2.post1-cp312-cp312-linux_x86_64.whl"
-uv run --with "pyproj @ $WHEEL_URL" \
-  python pyproj/validate.py pyproj/data/Z001_ETRS89andRDNAP.txt pyproj/data/Z001_ETRS89andRDNAP_transformed.csv
+PROJ_NETWORK=ON uv run --with "pyproj @ $WHEEL_URL" \
+  python validation/validate.py validation/data/Z001_ETRS89andRDNAP.txt /tmp/Z001_ETRS89andRDNAP_transformed.csv
 ```
 
 This outputs `pyproj/data/Z001_ETRS89andRDNAP_transformed.csv` file. If correct, the transformed coordinates will have minimal deviation from the known coordinates.

@@ -118,10 +118,15 @@ jobs:
               with zipfile.ZipFile(wheel, "r") as zf:
                   zf.extractall(tmp)
 
-              # Copy NSGI proj data (proj.db, grids, …) into the wheel tree.
+              # Copy NSGI proj databases into the wheel tree.
+              # Grid files are excluded; users must set PROJ_NETWORK=ON for on-demand download
+              # or provide their own grid directory via PROJ_DATA environment variable.
               dest = tmp / "pyproj" / "proj_dir" / "share" / "proj"
               dest.mkdir(parents=True, exist_ok=True)
-              shutil.copytree(data_src, dest, dirs_exist_ok=True)
+              for fname in ['proj.db', 'proj.time.dependent.transformations.db']:
+                  src = data_src / fname
+                  if src.exists():
+                      shutil.copy2(src, dest / fname)
 
               dist_info = next(tmp.glob("pyproj-*.dist-info"))
 
