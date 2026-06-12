@@ -242,19 +242,10 @@ To verify that NSGI transformations are correctly installed via the published wh
 
 ```bash
 WHEEL_URL="https://github.com/GeodetischeInfrastructuur/transformations/releases/download/9.7.1-post1/pyproj-3.7.2.post1-cp312-cp312-linux_x86_64.whl"
-uv run --with "pyproj @ $WHEEL_URL" python -c '
-from pyproj import transformer
-etrf = transformer.TransformerGroup("EPSG:7931", "EPSG:7415")
-result = etrf.transformers[0].transform(52.115330444, 7.684748554, 41.4160)
-print("{0[0]:.4f} {0[1]:.4f} {0[2]:.4f}".format(result))
-'
+uv run --with "pyproj @ $WHEEL_URL" python validation/transform_csv.py validation/data/002_ETRS89.txt validation/data/002_ETRS89_transformed.txt
 ```
 
-Expected output:
-
-```txt
-312352.6004 461058.5812 -2.5206
-```
+Expected output: transformed coordinates file.
 
 ### Validate transformation accuracy with NSGI validation service
 
@@ -268,32 +259,26 @@ Use the [NSGI validation service](https://www.nsgi.nl/coordinatenstelsels-en-tra
 Download the test datasets, transform them with this tool, and upload the results:
 
 ```sh
-(
-    cd pyproj
-    curl -o 002_RDNAP.txt 'https://www.nsgi.nl/documents/1888506/1945213/002_RDNAP.txt/5d6dc6b8-a59d-40d0-0363-8a9b59e51c62?t=1574879689583'
-    curl -o 002_ETRS89.txt 'https://www.nsgi.nl/documents/1888506/1944539/002_ETRS89.txt/6aa954da-d345-de97-386a-4fbd956edf52?t=1574879755720'
-)
+curl -o validation/data/002_RDNAP.txt 'https://www.nsgi.nl/documents/1888506/1945213/002_RDNAP.txt/5d6dc6b8-a59d-40d0-0363-8a9b59e51c62?t=1574879689583'
+curl -o validation/data/002_ETRS89.txt 'https://www.nsgi.nl/documents/1888506/1944539/002_ETRS89.txt/6aa954da-d345-de97-386a-4fbd956edf52?t=1574879755720'
 
 WHEEL_URL="https://github.com/GeodetischeInfrastructuur/transformations/releases/download/9.7.1-post1/pyproj-3.7.2.post1-cp312-cp312-linux_x86_64.whl"
-uv run --with "pyproj @ $WHEEL_URL" \
-  python pyproj/transform_csv.py pyproj/002_ETRS89.txt pyproj/002_ETRS89_transformed.txt
-uv run --with "pyproj @ $WHEEL_URL" \
-  python pyproj/transform_csv.py pyproj/002_RDNAP.txt pyproj/002_RDNAP_transformed.txt
+uv run --with "pyproj @ $WHEEL_URL" python validation/transform_csv.py validation/data/002_ETRS89.txt validation/data/002_ETRS89_transformed.txt
+uv run --with "pyproj @ $WHEEL_URL" python validation/transform_csv.py validation/data/002_RDNAP.txt validation/data/002_RDNAP_transformed.txt
 ```
 
 Upload the generated files to the [validation service](https://www.nsgi.nl/coordinatenstelsels-en-transformaties/tools/validatieservice). The score must be 100% for *Netherlands+EEZ*.
 
 ### Validate transformation accuracy with reference coordinates
 
-Validate transformation accuracy against reference coordinates. The file `Z001_ETRS89andRDNAP.txt` contains verified coordinate pairs in both ETRS89 and RDNAP. The script transforms each set and calculates deviation from the known values—measuring transformation accuracy.
+Validate transformation accuracy against reference coordinates. The file `validation/data/Z001_ETRS89andRDNAP.txt` contains verified coordinate pairs in both ETRS89 and RDNAP. The script transforms each set and calculates deviation from the known values—measuring transformation accuracy.
 
 ```bash
 WHEEL_URL="https://github.com/GeodetischeInfrastructuur/transformations/releases/download/9.7.1-post1/pyproj-3.7.2.post1-cp312-cp312-linux_x86_64.whl"
-uv run --with "pyproj @ $WHEEL_URL" \
-  python pyproj/validate.py pyproj/data/Z001_ETRS89andRDNAP.txt pyproj/data/Z001_ETRS89andRDNAP_transformed.csv
+uv run --with "pyproj @ $WHEEL_URL" python validation/validate.py validation/data/Z001_ETRS89andRDNAP.txt validation/data/Z001_ETRS89andRDNAP_transformed.csv
 ```
 
-This outputs `pyproj/data/Z001_ETRS89andRDNAP_transformed.csv` file. If correct, the transformed coordinates will have minimal deviation from the known coordinates.
+This outputs `validation/data/Z001_ETRS89andRDNAP_transformed.csv` file. If correct, the transformed coordinates will have minimal deviation from the known coordinates.
 
 <!-- TODO: add check to verify if deviations are within a certain threshold. -->
 
