@@ -31,6 +31,37 @@ jobs:
           username: ${{github.actor}}
           password: ${{secrets.GITHUB_TOKEN}}
 
+      - name: "Derive version strings"
+        id: versions
+        shell: bash
+        run: |
+          PROJ_VERSION=$(grep -E '^ARG PROJ_VERSION=' Dockerfile | head -1 | cut -d= -f2)
+          POST_PATCH=$(grep -E '^ARG POST_PATCH=' Dockerfile | head -1 | cut -d= -f2)
+          PYPROJ_VERSION=$(grep -E '^ARG PYPROJ_VERSION=' pyproj/Dockerfile | head -1 | cut -d= -f2)
+          # Extract any prerelease suffix from the release tag (e.g. "-rc1" from "9.7.1-post2-rc1").
+          RELEASE_TAG="${{ github.event.release.tag_name }}"
+          PRERELEASE_SUFFIX=$(echo "$RELEASE_TAG" | sed -E 's/^[0-9]+\.[0-9]+\.[0-9]+-post[0-9]+//')
+          echo "PROJ_VERSION=${PROJ_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "POST_PATCH=${POST_PATCH}" >> "$GITHUB_OUTPUT"
+          echo "PYPROJ_VERSION=${PYPROJ_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "PRERELEASE_SUFFIX=${PRERELEASE_SUFFIX}" >> "$GITHUB_OUTPUT"
+          echo "PYPROJ_IMAGE_TAG=${PYPROJ_VERSION}-post${POST_PATCH}${PRERELEASE_SUFFIX}" >> "$GITHUB_OUTPUT"
+
+      - name: "Verify release tag matches Dockerfile versions"
+        shell: bash
+        run: |
+          PROJ_VERSION="${{ steps.versions.outputs.PROJ_VERSION }}"
+          POST_PATCH="${{ steps.versions.outputs.POST_PATCH }}"
+          PRERELEASE_SUFFIX="${{ steps.versions.outputs.PRERELEASE_SUFFIX }}"
+          EXPECTED_TAG="${PROJ_VERSION}-post${POST_PATCH}${PRERELEASE_SUFFIX}"
+          ACTUAL_TAG="${{ github.event.release.tag_name }}"
+          if [[ "$ACTUAL_TAG" != "$EXPECTED_TAG" ]]; then
+            echo "ERROR: release tag '$ACTUAL_TAG' does not match Dockerfile versions."
+            echo "Expected tag: '$EXPECTED_TAG' (PROJ_VERSION=${PROJ_VERSION}, POST_PATCH=${POST_PATCH})"
+            echo "Update ARG PROJ_VERSION and/or ARG POST_PATCH in Dockerfile to match the release tag."
+            exit 1
+          fi
+
       - name: "Build transformations image"
         run: |
           docker build . --tag ghcr.io/${{ steps.lowercaserepo.outputs.REPO_LC }}:${{ github.event.release.tag_name }}
@@ -40,32 +71,18 @@ jobs:
             docker push ghcr.io/${{ steps.lowercaserepo.outputs.REPO_LC }}:latest
           fi
 
-      - name: "Derive pyproj image tag"
-        id: pyprojtag
-        shell: bash
-        run: |
-          PYPROJ_VERSION=$(grep -E '^ARG PYPROJ_VERSION=' pyproj/Dockerfile | head -1 | cut -d= -f2)
-          PROJ_VERSION=$(grep -E '^ARG PROJ_VERSION=' pyproj/Dockerfile | head -1 | cut -d= -f2)
-          POST_PATCH=$(grep -E '^ARG POST_PATCH=' pyproj/Dockerfile | head -1 | cut -d= -f2)
-          # Extract any prerelease suffix from the release tag (e.g. "-rc1" from "9.7.1-post2-rc1").
-          RELEASE_TAG="${{ github.event.release.tag_name }}"
-          PRERELEASE_SUFFIX=$(echo "$RELEASE_TAG" | sed -E 's/^[0-9]+\.[0-9]+\.[0-9]+-post[0-9]+//')
-          echo "PYPROJ_IMAGE_TAG=${PYPROJ_VERSION}-post${POST_PATCH}${PRERELEASE_SUFFIX}" >> "$GITHUB_OUTPUT"
-          echo "PYPROJ_VERSION=${PYPROJ_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "PROJ_VERSION=${PROJ_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "POST_PATCH=${POST_PATCH}" >> "$GITHUB_OUTPUT"
-          echo "PRERELEASE_SUFFIX=${PRERELEASE_SUFFIX}" >> "$GITHUB_OUTPUT"
-
       - name: "Build pyproj image"
         run: |
           docker build ./pyproj \
             --pull=false \
-            --build-arg TRANSFORMATION_IMAGE_SOURCE=ghcr.io/ \
+            --build-arg TRANSFORMATION_IMAGE_SOURCE=ghcr.io/geodetischeinfrastructuur/ \
             --build-arg TRANSFORMATION_IMAGE_TAG=${{ github.event.release.tag_name }} \
-            --tag ghcr.io/${{ steps.lowercaserepo.outputs.OWNER_LC }}/pyproj:${{ steps.pyprojtag.outputs.PYPROJ_IMAGE_TAG }}
-          docker push ghcr.io/${{ steps.lowercaserepo.outputs.OWNER_LC }}/pyproj:${{ steps.pyprojtag.outputs.PYPROJ_IMAGE_TAG }}
+            --build-arg PROJ_VERSION=${{ steps.versions.outputs.PROJ_VERSION }} \
+            --build-arg POST_PATCH=${{ steps.versions.outputs.POST_PATCH }} \
+            --tag ghcr.io/${{ steps.lowercaserepo.outputs.OWNER_LC }}/pyproj:${{ steps.versions.outputs.PYPROJ_IMAGE_TAG }}
+          docker push ghcr.io/${{ steps.lowercaserepo.outputs.OWNER_LC }}/pyproj:${{ steps.versions.outputs.PYPROJ_IMAGE_TAG }}
           if [[ "${{ github.event.release.prerelease }}" == "false" ]]; then
-            docker tag ghcr.io/${{ steps.lowercaserepo.outputs.OWNER_LC }}/pyproj:${{ steps.pyprojtag.outputs.PYPROJ_IMAGE_TAG }} ghcr.io/${{ steps.lowercaserepo.outputs.OWNER_LC }}/pyproj:latest
+            docker tag ghcr.io/${{ steps.lowercaserepo.outputs.OWNER_LC }}/pyproj:${{ steps.versions.outputs.PYPROJ_IMAGE_TAG }} ghcr.io/${{ steps.lowercaserepo.outputs.OWNER_LC }}/pyproj:latest
             docker push ghcr.io/${{ steps.lowercaserepo.outputs.OWNER_LC }}/pyproj:latest
           fi
 
@@ -74,10 +91,10 @@ jobs:
           mkdir -p dist
           docker run --rm \
             -e PROJ_DIR=/usr \
-            -e PROJ_VERSION=${{ steps.pyprojtag.outputs.PROJ_VERSION }} \
+            -e PROJ_VERSION=${{ steps.versions.outputs.PROJ_VERSION }} \
             -v "$PWD/dist:/dist" \
-            ghcr.io/${{ steps.lowercaserepo.outputs.OWNER_LC }}/pyproj:latest \
-            sh -c 'uv pip wheel --no-binary pyproj --wheel-dir /dist "pyproj==${{ steps.pyprojtag.outputs.PYPROJ_VERSION }}"'
+            ghcr.io/${{ steps.lowercaserepo.outputs.OWNER_LC }}/pyproj:${{ steps.versions.outputs.PYPROJ_IMAGE_TAG }} \
+            sh -c 'uv pip wheel --no-binary pyproj --wheel-dir /dist "pyproj==${{ steps.versions.outputs.PYPROJ_VERSION }}"'
           cat > /tmp/inject_proj_data.py << 'PYEOF'
           # Patches a pyproj wheel built from PyPI source with two changes:
           #   1. Injects the NSGI custom PROJ data directory (proj.db + grids) into
@@ -156,12 +173,26 @@ jobs:
                           zf.write(f, f.relative_to(tmp))
           PYEOF
           docker run --rm \
-            -e POST_PATCH=${{ steps.pyprojtag.outputs.POST_PATCH }} \
-            -e PRERELEASE_SUFFIX=${{ steps.pyprojtag.outputs.PRERELEASE_SUFFIX }} \
+            -e POST_PATCH=${{ steps.versions.outputs.POST_PATCH }} \
+            -e PRERELEASE_SUFFIX=${{ steps.versions.outputs.PRERELEASE_SUFFIX }} \
             -v "$PWD/dist:/dist" \
             -v "/tmp/inject_proj_data.py:/inject_proj_data.py:ro" \
-            ghcr.io/${{ steps.lowercaserepo.outputs.OWNER_LC }}/pyproj:latest \
+            ghcr.io/${{ steps.lowercaserepo.outputs.OWNER_LC }}/pyproj:${{ steps.versions.outputs.PYPROJ_IMAGE_TAG }} \
             python3 /inject_proj_data.py
+
+      - name: "Smoke test: validate transformations"
+        run: |
+          docker run --rm \
+            ghcr.io/${{ steps.lowercaserepo.outputs.OWNER_LC }}/pyproj:${{ steps.versions.outputs.PYPROJ_IMAGE_TAG }} \
+            python3 -c "
+          from pyproj import transformer
+          etrf = transformer.TransformerGroup('EPSG:7931', 'EPSG:7415')
+          result = etrf.transformers[0].transform(52.115330444, 7.684748554, 41.4160)
+          expected = (312352.6004, 461058.5812, -2.5206)
+          for got, exp in zip(result, expected):
+              assert abs(got - exp) < 0.001, f'FAIL: got {got:.4f}, expected {exp:.4f}'
+          print('Smoke test passed:', [f'{v:.4f}' for v in result])
+          "
 
       - name: "Upload pyproj wheel"
         env:
