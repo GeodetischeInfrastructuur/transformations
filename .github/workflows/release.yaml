@@ -223,11 +223,3 @@ jobs:
           GH_TOKEN: ${{secrets.GITHUB_TOKEN}}
         run: |
           gh release upload ${{ github.event.release.tag_name }} proj.time.dependent.transformations.db
-
-      - name: "Upload grids"
-        env:
-          GH_TOKEN: ${{secrets.GITHUB_TOKEN}}
-        run: |
-          gh release upload ${{ github.event.release.tag_name }} grids/nl_nsgi/bq_nsgi_bongeo2004.tif
-          gh release upload ${{ github.event.release.tag_name }} grids/nl_nsgi/nllat2018.gtx
-

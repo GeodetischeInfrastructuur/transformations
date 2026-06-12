@@ -58,7 +58,6 @@ For `ghcr.io/geodetischeinfrastructuur/pyproj`, `BASE_VERSION` is the pyproj ver
 | `ghcr.io/geodetischeinfrastructuur/transformations` | `9.7.1-post1` | PROJ version |
 | ↳ `proj.db` (GitHub release asset) | `proj.db` | same as above |
 | ↳ `proj.time.dependent.transformations.db` (GitHub release asset) | `proj.time.dependent.transformations.db` | same as above |
-| ↳ Grid files (GitHub release assets) | `bq_nsgi_bongeo2004.tif`, `nllat2018.gtx` | same as above |
 | `ghcr.io/geodetischeinfrastructuur/pyproj` | `3.7.2-post1` | pyproj version |
 | ↳ `pyproj` wheel (GitHub release asset) | `pyproj-3.7.2.post1-cp312-cp312-linux_x86_64.whl` | same as above |
 
