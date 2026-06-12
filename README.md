@@ -245,14 +245,16 @@ Expected output:
 To verify that NSGI transformations are correctly installed via the published wheel, run the following command (requires Linux `amd64` and Python `3.12`):
 
 ```bash
-WHEEL_URL="https://github.com/GeodetischeInfrastructuur/transformations/releases/download/9.7.1-post1/pyproj-3.7.2.post1-cp312-cp312-linux_x86_64.whl"
-uv run --python 3.12 --with "pyproj @ $WHEEL_URL" python -c '
+WHEEL_URL="https://github.com/GeodetischeInfrastructuur/transformations/releases/download/9.7.1-post1-rc6/pyproj-3.7.2.post1-cp312-cp312-linux_x86_64.whl"
+PROJ_NETWORK=ON uv run --python 3.12 --with "pyproj @ $WHEEL_URL" python -c '
 from pyproj import transformer
 etrf = transformer.TransformerGroup("EPSG:7931", "EPSG:7415")
 result = etrf.transformers[0].transform(52.115330444, 7.684748554, 41.4160)
 print("{0[0]:.4f} {0[1]:.4f} {0[2]:.4f}".format(result))
 '
 ```
+
+> **Note:** `PROJ_NETWORK=ON` is _not_ required for this specific transformation — the `nl_nsgi` grids are bundled in the wheel. It is included here for completeness. However, you may need `PROJ_NETWORK=ON` if using other transformations that require grids not included in the wheel (e.g., transformations that use global or regional grids from PROJ's CDN).
 
 Expected output:
 
