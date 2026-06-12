@@ -13,6 +13,8 @@ ARG TRANSFORMATION_IMAGE_TAG=${PROJ_VERSION}-post${POST_PATCH}
 # this image is versioned by pyproj: PYPROJ_VERSION-postPOST_PATCH (e.g. 3.7.2-post1)
 
 FROM osgeo/proj:${PROJ_VERSION} AS proj-source
+# download nl_nsgi grids from cdn.proj.org so the pyproj image works out of the box
+RUN mkdir /nlnsgi-grids && projsync --source-id nl_nsgi --target-dir /nlnsgi-grids
 
 FROM ${TRANSFORMATION_IMAGE_SOURCE}transformations:${TRANSFORMATION_IMAGE_TAG} AS transformations
 
@@ -52,6 +54,8 @@ RUN PROJ_DIR=/usr PROJ_VERSION=9.7.1 uv sync --no-binary-package pyproj
 # copy NSGI proj data into pyproj's internal data dir so pyproj picks it up automatically
 # (pyproj checks <package>/proj_dir/share/proj before any env var or system path)
 COPY --from=transformations /usr/share/proj/ /app/.venv/lib/python${PYTHON_VERSION}/site-packages/pyproj/proj_dir/share/proj/
+# copy nl_nsgi grids so the image works out of the box without PROJ_NETWORK=ON
+COPY --from=proj-source /nlnsgi-grids/ /app/.venv/lib/python${PYTHON_VERSION}/site-packages/pyproj/proj_dir/share/proj/
 
 ENV PATH="/app/.venv/bin:$PATH"
 
