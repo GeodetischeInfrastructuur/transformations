@@ -1,7 +1,9 @@
 ARG PROJ_VERSION=9.7.1
 ARG POST_PATCH=1
+# These manage the PROJ version and NSGI config patch level (source of truth for both images).
+# For local builds, these defaults will be used. The release workflow reads them here and
+# passes them to pyproj/Dockerfile via --build-arg.
 # image tag follows PROJ_VERSION-postPOST_PATCH (e.g. 9.7.1-post1)
-# bump POST_PATCH for config-only changes; bump PROJ_VERSION and reset POST_PATCH=1 for PROJ updates
 
 FROM osgeo/proj:${PROJ_VERSION}
 ARG PROJ_VERSION

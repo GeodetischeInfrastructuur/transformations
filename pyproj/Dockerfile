@@ -1,15 +1,16 @@
 ARG PYTHON_VERSION=3.12
 ARG PYPROJ_VERSION=3.7.2
-ARG PROJ_VERSION=9.7.1
-ARG POST_PATCH=1
-ARG TRANSFORMATION_IMAGE_SOURCE=ghcr.io/
-# this image is versioned by pyproj: PYPROJ_VERSION-postPOST_PATCH (e.g. 3.7.2-post1)
-# PROJ_VERSION is a build detail used to pull the matching transformations base image
+ARG PROJ_VERSION
+ARG POST_PATCH
+ARG TRANSFORMATION_IMAGE_SOURCE=ghcr.io/geodetischeinfrastructuur/
 ARG TRANSFORMATION_IMAGE_TAG=${PROJ_VERSION}-post${POST_PATCH}
+# PYPROJ_VERSION is managed here (source of truth for the Python wrapper).
+# PROJ_VERSION and POST_PATCH must be passed by the release workflow or via --build-arg from the root Dockerfile.
+# this image is versioned by pyproj: PYPROJ_VERSION-postPOST_PATCH (e.g. 3.7.2-post1)
 
 FROM osgeo/proj:${PROJ_VERSION} AS proj-source
 
-FROM ${TRANSFORMATION_IMAGE_SOURCE}geodetischeinfrastructuur/transformations:${TRANSFORMATION_IMAGE_TAG} AS transformations
+FROM ${TRANSFORMATION_IMAGE_SOURCE}transformations:${TRANSFORMATION_IMAGE_TAG} AS transformations
 
 # uv doesn't have a noble variant, so copy just the uv binary from the uv image
 FROM ghcr.io/astral-sh/uv:latest AS uv-source
