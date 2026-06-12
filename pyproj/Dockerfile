@@ -36,11 +36,12 @@ COPY --from=proj-source /usr/lib/x86_64-linux-gnu/libproj.so /usr/lib/x86_64-lin
 COPY --from=proj-source /usr/include/*.h /usr/include/
 COPY --from=proj-source /usr/include/proj/ /usr/include/proj/
 
-# install Python 3.12, gcc, and all runtime dependencies of libproj (sqlite3, tiff, curl+TLS chain)
+# install Python 3.12, gcc, patchelf, and all runtime dependencies of libproj (sqlite3, tiff, curl+TLS chain)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.12 \
     python3.12-dev \
     gcc \
+    patchelf \
     libsqlite3-0 \
     libtiff6 \
     libcurl3t64-gnutls \
