@@ -97,16 +97,19 @@ jobs:
             ghcr.io/${{ steps.lowercaserepo.outputs.OWNER_LC }}/pyproj:${{ steps.versions.outputs.PYPROJ_IMAGE_TAG }} \
             sh -c 'uvx pip wheel --no-deps --no-binary pyproj --wheel-dir /dist "pyproj==${{ steps.versions.outputs.PYPROJ_VERSION }}"'
           cat > /tmp/inject_proj_data.py << 'PYEOF'
-          # Patches a pyproj wheel built from PyPI source with two changes:
-          #   1. Injects the NSGI custom PROJ data (proj.db, proj.ini, nl_nsgi grids) into
+          # Patches a pyproj wheel built from PyPI source with three changes:
+          #   1. Bundles libproj.so.25 (PROJ 9.7.1) into pyproj.libs/ and patches the RPATH
+          #      of all extension .so files so the correct PROJ version is loaded at runtime,
+          #      regardless of what libproj is installed on the host.
+          #   2. Injects the NSGI custom PROJ data (proj.db, proj.ini, nl_nsgi grids) into
           #      pyproj/proj_dir/share/proj/ inside the wheel, so the wheel is
           #      self-contained — no separate data-directory setup required after install.
-          #   2. When POST_PATCH is set, applies a PEP 440 post-release version bump
+          #   3. When POST_PATCH is set, applies a PEP 440 post-release version bump
           #      (e.g. 3.7.2 -> 3.7.2.post1) to METADATA, the dist-info directory name,
           #      and the wheel filename, signalling that the NSGI data has been customised.
           #      Prerelease status is indicated by GitHub's release.prerelease flag, not
           #      in the wheel version itself. This keeps wheel filenames simple and valid.
-          import base64, hashlib, os, re, shutil, tempfile, zipfile
+          import base64, hashlib, os, re, shutil, subprocess, tempfile, zipfile
           from pathlib import Path
 
           wheel = next(Path("/dist").glob("pyproj-*.whl"))
@@ -127,6 +130,17 @@ jobs:
                       shutil.copy2(src, dest / fname)
               for grid in data_src.glob('nl_nsgi_*'):
                   shutil.copy2(grid, dest / grid.name)
+
+              # Bundle libproj.so.25 (PROJ 9.7.1) so the extension loads the correct version
+              # at runtime regardless of what libproj is installed on the host system.
+              # Patch RPATH of every extension .so to look in pyproj.libs/ before system paths.
+              libs_dir = tmp / "pyproj.libs"
+              libs_dir.mkdir(exist_ok=True)
+              libproj = Path("/usr/lib/x86_64-linux-gnu/libproj.so.25")
+              if libproj.exists():
+                  shutil.copy2(libproj, libs_dir / "libproj.so.25")
+                  for so in sorted((tmp / "pyproj").glob("*.so")):
+                      subprocess.check_call(["patchelf", "--add-rpath", "$ORIGIN/../pyproj.libs", str(so)])
 
               dist_info = next(tmp.glob("pyproj-*.dist-info"))
 
