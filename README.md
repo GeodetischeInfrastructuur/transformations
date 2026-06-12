@@ -1,7 +1,7 @@
 # Transformations
 
 [![GitHub
-license](https://img.shields.io/github/license/GeodetischeInfrastructuur/Transformations)](https://github.com/GeodetischeInfrastructuur/Transformations/blob/master/LICENSE) [![Static Badge](https://img.shields.io/badge/%20ghcr.io-geodetischeinfrastructuur%2Ftransformations-green?)](https://ghcr.io/geodetischeinfrastructuur/transformations) [![GitHub Release](https://img.shields.io/github/v/release/GeodetischeInfrastructuur/transformations)](https://github.com/GeodetischeInfrastructuur/transformations/releases) [![PROJ](https://img.shields.io/badge/PROJ-9.7.1-blue)](https://proj.org/) [![pyproj](https://img.shields.io/badge/pyproj-3.7.2-blue)](https://pyproj4.github.io/pyproj/)
+license](https://img.shields.io/github/license/GeodetischeInfrastructuur/Transformations)](https://github.com/GeodetischeInfrastructuur/Transformations/blob/master/LICENSE) [![Static Badge](https://img.shields.io/badge/%20ghcr.io-geodetischeinfrastructuur%2Ftransformations-green?)](https://ghcr.io/geodetischeinfrastructuur/transformations) [![GitHub Release](https://img.shields.io/github/v/release/GeodetischeInfrastructuur/transformations)](https://github.com/GeodetischeInfrastructuur/transformations/releases) [![PROJ](https://img.shields.io/badge/PROJ-9.7.1-blue)](https://proj.org/) [![pyproj](https://img.shields.io/badge/pyproj-3.7.2--post1-blue)](https://ghcr.io/geodetischeinfrastructuur/pyproj)
 
 This repository contains a modified proj.db that implements the following
 transformations according to the recommendations of the NSGI (see image below).
@@ -45,11 +45,30 @@ repository.
 > ln -s proj.time.dependent.transformations.db proj.db
 > ```
 
+## Versioning
+
+Both Docker images use a `BASE_VERSION-postN` tag scheme, where `N` is incremented for NSGI configuration changes.
+For `ghcr.io/geodetischeinfrastructuur/transformations`, `BASE_VERSION` is the PROJ version.
+For `ghcr.io/geodetischeinfrastructuur/pyproj`, `BASE_VERSION` is the pyproj version.
+
+| Artifact | Example tag / filename | Versioned by |
+| :--- | :--- | :--- |
+| `ghcr.io/geodetischeinfrastructuur/transformations` | `9.7.1-post1` | PROJ version |
+| `ghcr.io/geodetischeinfrastructuur/pyproj` | `3.7.2-post1` | pyproj version |
+| `pyproj` wheel (GitHub release asset) | `pyproj-3.7.2.post1-cp312-cp312-linux_x86_64.whl` | pyproj version |
+
+**Bumping rules:**
+
+- NSGI config change only → increment `N` (e.g. `9.7.1-post1` → `9.7.1-post2`)
+- PROJ/pyproj version update → bump the version and reset `N` to `1` (e.g. `9.7.2-post1`)
+
+The two images are released independently. A PROJ update in `transformations` does not necessarily require a new `pyproj` release, and vice versa.
+
 ## Integration
 
-There are two ways to use the NSGI-configured PROJ in your own environment.
+There are three options to use the NSGI-configured PROJ in your own environment.
 
-### 1. Use the Docker image directly
+### 1. Use the transformations Docker image
 
 Use `ghcr.io/geodetischeinfrastructuur/transformations:latest` as a base image or run it directly. This gives you a fully configured `libproj` with the NSGI `proj.db` and correction grids. Suitable for:
 
@@ -70,40 +89,36 @@ FROM ghcr.io/geodetischeinfrastructuur/transformations:latest
 RUN apt-get install -y my-libproj-dependent-app
 ```
 
-### 2. Copy the proj data directory into your Python environment
+### 2. Install the published custom pyproj wheel with uv
 
-`pyproj` bundles its own PROJ library and data directory. To use the NSGI-configured `proj.db` and grids, copy the full `/usr/share/proj/` from the Docker image into pyproj's data directory.
+The release workflow publishes a custom `pyproj` wheel as a GitHub release asset. As built today, that wheel is for Linux `amd64` (`x86_64`) and CPython `3.12` only.
 
-This works for:
+The wheel contains the Python package, compiled extension, and the NSGI custom PROJ data directory (`proj.db` and grids) bundled inside it. No additional data directory setup is needed after installation.
 
-- **Local Python environments** (virtualenv, conda, uv)
-- **QGIS** (replace the proj data dir used by QGIS's bundled PROJ)
-- **Python Docker containers** (see [`validate/Dockerfile`](validate/Dockerfile) for a working example)
+If you use `uv`, point your project at the published wheel with a direct URL dependency. The simplest form is to replace the PyPI dependency with the release asset URL:
 
-**Locally:**
-
-```bash
-id=$(docker create ghcr.io/geodetischeinfrastructuur/transformations:latest)
-docker cp "$id:/usr/share/proj/." "$(python -c 'import pyproj;print(pyproj.datadir.get_data_dir())')"
-docker rm "$id"
+```toml
+[project]
+dependencies = [
+  "pyproj @ https://github.com/GeodetischeInfrastructuur/transformations/releases/download/9.7.1-post1/pyproj-3.7.2.post1-cp312-cp312-linux_x86_64.whl",
+]
 ```
 
-**In a Dockerfile** (multi-stage, copies into pyproj's bundled data dir):
+If you want to keep the dependency name separate from the wheel location, use a `tool.uv.sources` override instead:
 
-```dockerfile
-FROM ghcr.io/geodetischeinfrastructuur/transformations:latest AS transformations
+```toml
+[project]
+dependencies = [
+  "pyproj==3.7.2.post1",
+]
 
-FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
-ARG PYTHON_VERSION=3.12
-WORKDIR /app
-COPY pyproject.toml uv.lock ./
-RUN uv sync
-COPY --from=transformations /usr/share/proj/ \
-     "/app/.venv/lib/python${PYTHON_VERSION}/site-packages/pyproj/proj_dir/share/proj"
-ENV PATH="/app/.venv/bin:$PATH"
+[tool.uv.sources]
+pyproj = { url = "https://github.com/GeodetischeInfrastructuur/transformations/releases/download/9.7.1-post1/pyproj-3.7.2.post1-cp312-cp312-linux_x86_64.whl" }
 ```
 
-See also [`./validate/Dockerfile`](./validate/Dockerfile).
+After updating `pyproject.toml`, run `uv lock` and `uv sync`.
+
+This wheel is intended for local Python environments and Docker images that run on Linux `amd64` with Python `3.12`. For other platforms or Python versions, use the Docker image or build from source instead.
 
 ### 3. Manual setup for local Python environments
 
@@ -142,8 +157,8 @@ Expected output:
 To verify that NSGI transformations are correcly installed in pyproj environment run the following docker/python command:
 
 ```bash
-docker build -t transformations-validate ./validate
-docker run --rm transformations-validate python -c '
+docker build -t pyproj ./pyproj
+docker run --rm pyproj python -c '
 from pyproj import transformer
 etrf = transformer.TransformerGroup("EPSG:7931", "EPSG:7415")
 result = etrf.transformers[0].transform(52.115330444, 7.684748554, 41.4160)
@@ -169,19 +184,19 @@ Use the [NSGI validation service](https://www.nsgi.nl/coordinatenstelsels-en-tra
 Download the test datasets, transform them with this tool, and upload the results:
 
 ```sh
-docker build -t transformations-validate ./validate
+docker build -t pyproj ./pyproj
 (
-    cd validate
+    cd pyproj
     curl -o 002_RDNAP.txt 'https://www.nsgi.nl/documents/1888506/1945213/002_RDNAP.txt/5d6dc6b8-a59d-40d0-0363-8a9b59e51c62?t=1574879689583'
     curl -o 002_ETRS89.txt 'https://www.nsgi.nl/documents/1888506/1944539/002_ETRS89.txt/6aa954da-d345-de97-386a-4fbd956edf52?t=1574879755720'
 )
 
-docker run -v $(pwd)/validate:/data \
-  transformations-validate \
+docker run -v $(pwd)/pyproj:/data \
+  pyproj \
   transform-csv /data/002_ETRS89.txt /data/002_ETRS89_transformed.txt
 
-docker run -v $(pwd)/validate:/data \
-  transformations-validate \
+docker run -v $(pwd)/pyproj:/data \
+  pyproj \
   python transform-csv /data/002_RDNAP.txt /data/002_RDNAP_transformed.txt
 ```
 
@@ -192,10 +207,10 @@ Upload the generated files to the [validation service](https://www.nsgi.nl/coord
 Validate transformation accuracy against reference coordinates. The file `Z001_ETRS89andRDNAP.txt` contains verified coordinate pairs in both ETRS89 and RDNAP. The script transforms each set and calculates deviation from the known values—measuring transformation accuracy.
 
 ```bash
-docker run -v $(pwd)/validate/data:/data transformations-validate python validate.py /data/Z001_ETRS89andRDNAP.txt /data/Z001_ETRS89andRDNAP_transformed.csv
+docker run -v $(pwd)/pyproj/data:/data pyproj python validate.py /data/Z001_ETRS89andRDNAP.txt /data/Z001_ETRS89andRDNAP_transformed.csv
 ```
 
-This outputs `validate/data/Z001_ETRS89andRDNAP_transformed.csv` file. If correct, the transformed coordinates will have minimal deviation from the known coordinates.
+This outputs `pyproj/data/Z001_ETRS89andRDNAP_transformed.csv` file. If correct, the transformed coordinates will have minimal deviation from the known coordinates.
 
 <!-- TODO: add check to verify if deviations are within a certain threshold. -->
 

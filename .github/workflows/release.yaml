@@ -17,7 +17,9 @@ jobs:
         id: lowercaserepo
         run: |
           GH_REPO=${{ github.repository }}
+          GH_OWNER=${{ github.repository_owner }}
           echo "REPO_LC=${GH_REPO,,}" >> $GITHUB_OUTPUT
+          echo "OWNER_LC=${GH_OWNER,,}" >> $GITHUB_OUTPUT
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -29,12 +31,143 @@ jobs:
           username: ${{github.actor}}
           password: ${{secrets.GITHUB_TOKEN}}
 
-      - name: "Build image"
+      - name: "Build transformations image"
         run: |
-          docker build . --tag ghcr.io/${{ steps.lowercaserepo.outputs.REPO_LC }}:latest
-          docker push ghcr.io/${{ steps.lowercaserepo.outputs.REPO_LC }}:latest
-          docker tag ghcr.io/${{ steps.lowercaserepo.outputs.REPO_LC }}:latest ghcr.io/${{ steps.lowercaserepo.outputs.REPO_LC }}:${{ github.event.release.tag_name }}
+          docker build . --tag ghcr.io/${{ steps.lowercaserepo.outputs.REPO_LC }}:${{ github.event.release.tag_name }}
           docker push ghcr.io/${{ steps.lowercaserepo.outputs.REPO_LC }}:${{ github.event.release.tag_name }}
+          if [[ "${{ github.event.release.prerelease }}" == "false" ]]; then
+            docker tag ghcr.io/${{ steps.lowercaserepo.outputs.REPO_LC }}:${{ github.event.release.tag_name }} ghcr.io/${{ steps.lowercaserepo.outputs.REPO_LC }}:latest
+            docker push ghcr.io/${{ steps.lowercaserepo.outputs.REPO_LC }}:latest
+          fi
+
+      - name: "Derive pyproj image tag"
+        id: pyprojtag
+        shell: bash
+        run: |
+          PYPROJ_VERSION=$(grep -E '^ARG PYPROJ_VERSION=' pyproj/Dockerfile | head -1 | cut -d= -f2)
+          PROJ_VERSION=$(grep -E '^ARG PROJ_VERSION=' pyproj/Dockerfile | head -1 | cut -d= -f2)
+          POST_PATCH=$(grep -E '^ARG POST_PATCH=' pyproj/Dockerfile | head -1 | cut -d= -f2)
+          # Extract any prerelease suffix from the release tag (e.g. "-rc1" from "9.7.1-post2-rc1").
+          RELEASE_TAG="${{ github.event.release.tag_name }}"
+          PRERELEASE_SUFFIX=$(echo "$RELEASE_TAG" | sed -E 's/^[0-9]+\.[0-9]+\.[0-9]+-post[0-9]+//')
+          echo "PYPROJ_IMAGE_TAG=${PYPROJ_VERSION}-post${POST_PATCH}${PRERELEASE_SUFFIX}" >> "$GITHUB_OUTPUT"
+          echo "PYPROJ_VERSION=${PYPROJ_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "PROJ_VERSION=${PROJ_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "POST_PATCH=${POST_PATCH}" >> "$GITHUB_OUTPUT"
+          echo "PRERELEASE_SUFFIX=${PRERELEASE_SUFFIX}" >> "$GITHUB_OUTPUT"
+
+      - name: "Build pyproj image"
+        run: |
+          docker build ./pyproj \
+            --pull=false \
+            --build-arg TRANSFORMATION_IMAGE_SOURCE=ghcr.io/ \
+            --build-arg TRANSFORMATION_IMAGE_TAG=${{ github.event.release.tag_name }} \
+            --tag ghcr.io/${{ steps.lowercaserepo.outputs.OWNER_LC }}/pyproj:${{ steps.pyprojtag.outputs.PYPROJ_IMAGE_TAG }}
+          docker push ghcr.io/${{ steps.lowercaserepo.outputs.OWNER_LC }}/pyproj:${{ steps.pyprojtag.outputs.PYPROJ_IMAGE_TAG }}
+          if [[ "${{ github.event.release.prerelease }}" == "false" ]]; then
+            docker tag ghcr.io/${{ steps.lowercaserepo.outputs.OWNER_LC }}/pyproj:${{ steps.pyprojtag.outputs.PYPROJ_IMAGE_TAG }} ghcr.io/${{ steps.lowercaserepo.outputs.OWNER_LC }}/pyproj:latest
+            docker push ghcr.io/${{ steps.lowercaserepo.outputs.OWNER_LC }}/pyproj:latest
+          fi
+
+      - name: "Build custom pyproj wheel"
+        run: |
+          mkdir -p dist
+          docker run --rm \
+            -e PROJ_DIR=/usr \
+            -e PROJ_VERSION=${{ steps.pyprojtag.outputs.PROJ_VERSION }} \
+            -v "$PWD/dist:/dist" \
+            ghcr.io/${{ steps.lowercaserepo.outputs.OWNER_LC }}/pyproj:latest \
+            sh -c 'uv pip wheel --no-binary pyproj --wheel-dir /dist "pyproj==${{ steps.pyprojtag.outputs.PYPROJ_VERSION }}"'
+          cat > /tmp/inject_proj_data.py << 'PYEOF'
+          # Patches a pyproj wheel built from PyPI source with two changes:
+          #   1. Injects the NSGI custom PROJ data directory (proj.db + grids) into
+          #      pyproj/proj_dir/share/proj/ inside the wheel, so the wheel is
+          #      self-contained — no separate data-directory setup required after install.
+          #   2. When POST_PATCH is set, applies a PEP 440 post-release version bump
+          #      (e.g. 3.7.2 -> 3.7.2.post1) to METADATA, the dist-info directory name,
+          #      and the wheel filename, signalling that the NSGI data has been customised.
+          #      When PRERELEASE_SUFFIX is also set (e.g. "-rc1"), a PEP 440 local version
+          #      label is appended in METADATA (e.g. 3.7.2.post1+rc1); the dist-info dir
+          #      and wheel filename use "_" instead of "+" per PEP 427 normalisation rules.
+          #      The RECORD file is always recomputed from scratch after all changes.
+          import base64, hashlib, os, re, shutil, tempfile, zipfile
+          from pathlib import Path
+
+          wheel = next(Path("/dist").glob("pyproj-*.whl"))
+          data_src = Path("/app/.venv/lib/python3.12/site-packages/pyproj/proj_dir/share/proj")
+          post_patch = os.environ.get("POST_PATCH", "")
+          # PRERELEASE_SUFFIX carries the leading dash, e.g. "-rc1", or is empty for stable.
+          prerelease_suffix = os.environ.get("PRERELEASE_SUFFIX", "")
+
+          with tempfile.TemporaryDirectory() as tmp:
+              tmp = Path(tmp)
+              with zipfile.ZipFile(wheel, "r") as zf:
+                  zf.extractall(tmp)
+
+              # Copy NSGI proj data (proj.db, grids, …) into the wheel tree.
+              dest = tmp / "pyproj" / "proj_dir" / "share" / "proj"
+              dest.mkdir(parents=True, exist_ok=True)
+              shutil.copytree(data_src, dest, dirs_exist_ok=True)
+
+              dist_info = next(tmp.glob("pyproj-*.dist-info"))
+
+              if post_patch:
+                  rc_label = prerelease_suffix.lstrip("-") if prerelease_suffix else ""
+                  # PEP 440 version for METADATA: 3.7.2.post1 or 3.7.2.post1+rc1
+                  pep440_suffix = f".post{post_patch}" + (f"+{rc_label}" if rc_label else "")
+                  # Wheel filename version: 3.7.2.post1 or 3.7.2.post1_rc1  (+ -> _ per PEP 427)
+                  filename_suffix = f".post{post_patch}" + (f"_{rc_label}" if rc_label else "")
+
+                  # Bump Version: in METADATA.
+                  metadata = dist_info / "METADATA"
+                  metadata.write_text(re.sub(
+                      r'^(Version: )(.+)$',
+                      lambda m: f"{m.group(1)}{m.group(2)}{pep440_suffix}",
+                      metadata.read_text(), flags=re.MULTILINE,
+                  ))
+                  # Rename dist-info dir to match the new filename version.
+                  old_ver = dist_info.name.removeprefix("pyproj-").removesuffix(".dist-info")
+                  dist_info = dist_info.rename(dist_info.parent / f"pyproj-{old_ver}{filename_suffix}.dist-info")
+
+              # Recompute RECORD — sha256 hash and byte size for every file in the wheel.
+              # RECORD itself is listed last with empty hash/size fields per the wheel spec.
+              record = dist_info / "RECORD"
+              def digest(p):
+                  h = hashlib.sha256(p.read_bytes()).digest()
+                  return base64.urlsafe_b64encode(h).rstrip(b"=").decode()
+              rows = [
+                  f"{f.relative_to(tmp)},sha256={digest(f)},{f.stat().st_size}"
+                  for f in sorted(tmp.rglob("*")) if f.is_file() and f != record
+              ]
+              rows.append(f"{record.relative_to(tmp)},,")
+              record.write_text("\n".join(rows) + "\n")
+
+              # Repack the wheel, renaming the file when a version suffix is applied.
+              wheel.unlink()
+              if post_patch:
+                  parts = wheel.name.split("-")
+                  parts[1] = f"{parts[1]}{filename_suffix}"
+                  new_wheel = wheel.parent / "-".join(parts)
+              else:
+                  new_wheel = wheel
+              with zipfile.ZipFile(new_wheel, "w", zipfile.ZIP_DEFLATED) as zf:
+                  for f in sorted(tmp.rglob("*")):
+                      if f.is_file():
+                          zf.write(f, f.relative_to(tmp))
+          PYEOF
+          docker run --rm \
+            -e POST_PATCH=${{ steps.pyprojtag.outputs.POST_PATCH }} \
+            -e PRERELEASE_SUFFIX=${{ steps.pyprojtag.outputs.PRERELEASE_SUFFIX }} \
+            -v "$PWD/dist:/dist" \
+            -v "/tmp/inject_proj_data.py:/inject_proj_data.py:ro" \
+            ghcr.io/${{ steps.lowercaserepo.outputs.OWNER_LC }}/pyproj:latest \
+            python3 /inject_proj_data.py
+
+      - name: "Upload pyproj wheel"
+        env:
+          GH_TOKEN: ${{secrets.GITHUB_TOKEN}}
+        run: |
+          gh release upload ${{ github.event.release.tag_name }} dist/*.whl
 
       - name: "Export proj.db as package from Docker image"
         run: |
