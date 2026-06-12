@@ -1,11 +1,13 @@
 [project]
 name = "transformations"
-version = "0.1.0"
+# version mirrors the Docker tag scheme: PYPROJ_VERSION.postPOST_PATCH
+# (PEP 440 equivalent of the 3.7.2-post1 Docker tag)
+version = "3.7.2.post1"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "pyproj>=3.7.2",
+    "pyproj==3.7.2",
 ]
 
 [tool.uv]
