@@ -254,6 +254,8 @@ print("{0[0]:.4f} {0[1]:.4f} {0[2]:.4f}".format(result))
 '
 ```
 
+
+
 Expected output:
 
 ```txt
