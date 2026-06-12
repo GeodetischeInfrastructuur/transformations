@@ -95,7 +95,7 @@ jobs:
             -e PROJ_VERSION=${{ steps.versions.outputs.PROJ_VERSION }} \
             -v "$PWD/dist:/dist" \
             ghcr.io/${{ steps.lowercaserepo.outputs.OWNER_LC }}/pyproj:${{ steps.versions.outputs.PYPROJ_IMAGE_TAG }} \
-            sh -c 'uvx pip wheel --no-binary pyproj --wheel-dir /dist "pyproj==${{ steps.versions.outputs.PYPROJ_VERSION }}"'
+            sh -c 'uvx pip wheel --no-deps --no-binary pyproj --wheel-dir /dist "pyproj==${{ steps.versions.outputs.PYPROJ_VERSION }}"'
           cat > /tmp/inject_proj_data.py << 'PYEOF'
           # Patches a pyproj wheel built from PyPI source with two changes:
           #   1. Injects the NSGI custom PROJ data directory (proj.db + grids) into
