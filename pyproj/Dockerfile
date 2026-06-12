@@ -1,7 +1,11 @@
+# Build context: Must be run from repository root with:
+#   docker build . -f pyproj/Dockerfile [--build-arg ...]
+# This allows COPY to access both pyproj/ and validation/ directories.
+#
 ARG PYTHON_VERSION=3.12
 ARG PYPROJ_VERSION=3.7.2
-ARG PROJ_VERSION
-ARG POST_PATCH
+ARG PROJ_VERSION=9.7.1
+ARG POST_PATCH=1
 ARG TRANSFORMATION_IMAGE_SOURCE=ghcr.io/geodetischeinfrastructuur/
 ARG TRANSFORMATION_IMAGE_TAG=${PROJ_VERSION}-post${POST_PATCH}
 # PYPROJ_VERSION is managed here (source of truth for the Python wrapper).
@@ -40,7 +44,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libcurl3t64-gnutls \
     && rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml uv.lock .python-version ./
+COPY pyproj/pyproject.toml pyproj/uv.lock pyproj/.python-version ./
 COPY validation/ ./validation/
 # compile pyproj from source against PROJ 9.7.1; PROJ_DIR and PROJ_VERSION avoid needing the proj binary at build time
 RUN PROJ_DIR=/usr PROJ_VERSION=9.7.1 uv sync --no-binary-package pyproj
