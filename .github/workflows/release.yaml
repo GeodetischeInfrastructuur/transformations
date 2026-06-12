@@ -98,7 +98,7 @@ jobs:
             sh -c 'uvx pip wheel --no-deps --no-binary pyproj --wheel-dir /dist "pyproj==${{ steps.versions.outputs.PYPROJ_VERSION }}"'
           cat > /tmp/inject_proj_data.py << 'PYEOF'
           # Patches a pyproj wheel built from PyPI source with two changes:
-          #   1. Injects the NSGI custom PROJ data directory (proj.db + grids) into
+          #   1. Injects the NSGI custom PROJ data (proj.db, proj.ini, nl_nsgi grids) into
           #      pyproj/proj_dir/share/proj/ inside the wheel, so the wheel is
           #      self-contained — no separate data-directory setup required after install.
           #   2. When POST_PATCH is set, applies a PEP 440 post-release version bump
@@ -118,15 +118,15 @@ jobs:
               with zipfile.ZipFile(wheel, "r") as zf:
                   zf.extractall(tmp)
 
-              # Copy NSGI proj databases into the wheel tree.
-              # Grid files are excluded; users must set PROJ_NETWORK=ON for on-demand download
-              # or provide their own grid directory via PROJ_DATA environment variable.
+              # Copy NSGI proj databases, proj.ini, and nl_nsgi grids into the wheel tree.
               dest = tmp / "pyproj" / "proj_dir" / "share" / "proj"
               dest.mkdir(parents=True, exist_ok=True)
-              for fname in ['proj.db', 'proj.time.dependent.transformations.db']:
+              for fname in ['proj.db', 'proj.time.dependent.transformations.db', 'proj.ini']:
                   src = data_src / fname
                   if src.exists():
                       shutil.copy2(src, dest / fname)
+              for grid in data_src.glob('nl_nsgi_*'):
+                  shutil.copy2(grid, dest / grid.name)
 
               dist_info = next(tmp.glob("pyproj-*.dist-info"))
 
