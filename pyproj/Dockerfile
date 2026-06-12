@@ -40,7 +40,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libcurl3t64-gnutls \
     && rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml uv.lock validate.py transform_csv.py .python-version ./
+COPY pyproject.toml uv.lock .python-version ./
+COPY validation/ ./validation/
 # compile pyproj from source against PROJ 9.7.1; PROJ_DIR and PROJ_VERSION avoid needing the proj binary at build time
 RUN PROJ_DIR=/usr PROJ_VERSION=9.7.1 uv sync --no-binary-package pyproj
 

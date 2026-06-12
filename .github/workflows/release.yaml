@@ -73,7 +73,8 @@ jobs:
 
       - name: "Build pyproj image"
         run: |
-          docker build ./pyproj \
+          docker build . \
+            -f pyproj/Dockerfile \
             --pull=false \
             --build-arg TRANSFORMATION_IMAGE_SOURCE=ghcr.io/geodetischeinfrastructuur/ \
             --build-arg TRANSFORMATION_IMAGE_TAG=${{ github.event.release.tag_name }} \
@@ -184,15 +185,7 @@ jobs:
         run: |
           docker run --rm \
             ghcr.io/${{ steps.lowercaserepo.outputs.OWNER_LC }}/pyproj:${{ steps.versions.outputs.PYPROJ_IMAGE_TAG }} \
-            python3 -c "
-          from pyproj import transformer
-          etrf = transformer.TransformerGroup('EPSG:7931', 'EPSG:7415')
-          result = etrf.transformers[0].transform(52.115330444, 7.684748554, 41.4160)
-          expected = (312352.6004, 461058.5812, -2.5206)
-          for got, exp in zip(result, expected):
-              assert abs(got - exp) < 0.001, f'FAIL: got {got:.4f}, expected {exp:.4f}'
-          print('Smoke test passed:', [f'{v:.4f}' for v in result])
-          "
+            python3 validation/validate.py validation/data/Z001_ETRS89andRDNAP.txt /tmp/validation_output.csv
 
       - name: "Upload pyproj wheel"
         env:
