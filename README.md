@@ -109,9 +109,9 @@ RUN apt-get install -y my-libproj-dependent-app
 
 ### 2. Install the published custom pyproj wheel with uv
 
-The release workflow publishes a custom `pyproj` wheel as a GitHub release asset. As built today, that wheel is for Linux `amd64` (`x86_64`) and CPython `3.12` only.
+The release workflow publishes a custom `pyproj` wheel as a GitHub release asset. This is a pre-compiled wheel that bundles pyproj with NSGI transformations, custom PROJ databases, and grid files. As built today, the wheel is for Linux `amd64` (`x86_64`) and CPython `3.12` only.
 
-The wheel contains the Python package, compiled extension, the NSGI custom PROJ databases (`proj.db` and `proj.time.dependent.transformations.db`), and the `nl_nsgi` grid files. It is self-contained — no extra grid downloads or environment variables are needed after install.
+The wheel contains the Python package, compiled extension, the NSGI custom PROJ databases (`proj.db` and `proj.time.dependent.transformations.db`), and the `nl_nsgi` grid files. It is self-contained — no extra grid downloads, environment variables, or system libproj dependencies are needed after install.
 
 If you use `uv`, point your project at the published wheel with a direct URL dependency. The simplest form is to replace the PyPI dependency with the release asset URL:
 
@@ -153,35 +153,49 @@ projsync --source-id nl_nsgi --target-dir "$proj_dir"
 export PROJ_NETWORK=ON
 ```
 
-## Building Images Locally
+## For Developers
+
+This section covers building the artifacts in this repository locally. The repository produces two Docker images and one Python wheel:
+
+- **`transformations` image** — Built from the root [`Dockerfile`](Dockerfile). Contains the NSGI-customized `proj.db` on top of `osgeo/proj`.
+- **`pyproj` image** — Built from [`pyproj/Dockerfile`](pyproj/Dockerfile). Adds pyproj compiled against PROJ 9.7.1 with NSGI data baked in.
+- **`pyproj` wheel** — Built via [`pyproj/build-wheel.sh`](pyproj/build-wheel.sh) from inside the pyproj image. Self-contained wheel with bundled PROJ, NSGI databases, and grids.
+
+> For details on the pyproj image multi-stage build, wheel patching, RPATH manipulation, libcurl troubleshooting, and version coordination, see [pyproj/README.md](pyproj/README.md).
 
 ### Build the transformations image
 
-To build the transformations Docker image locally with the default PROJ version and patch level:
+The root [`Dockerfile`](Dockerfile) builds the `transformations` image. It applies the SQL scripts under [`sql/`](sql/) to the PROJ database from `osgeo/proj:${PROJ_VERSION}` and produces both `proj.db` (default) and `proj.time.dependent.transformations.db` (time-dependent variant).
+
+Build with default versions (read from [`Dockerfile`](Dockerfile) `ARG` defaults):
 
 ```bash
 docker build -t transformations .
 ```
 
-To build with custom `PROJ_VERSION` or `POST_PATCH`:
+Override `PROJ_VERSION` or `POST_PATCH` via build args:
 
 ```bash
-docker build -t transformations . \
+docker build -t transformations:9.7.1-post1 . \
   --build-arg PROJ_VERSION=9.7.1 \
   --build-arg POST_PATCH=1
 ```
 
-The image tag will follow the pattern `transformations:latest`. To tag it with the version:
+Verify the build with `cs2cs`:
 
 ```bash
-docker build -t transformations:9.7.1-post1 .
+docker run --rm transformations \
+  sh -c 'echo "52.115330444 7.684748554 41.4160" | cs2cs -f "%.4f" EPSG:7931 EPSG:7415'
+# Expected: 312352.6004 461058.5812 -2.5206
 ```
 
 ### Build the pyproj image
 
-The pyproj image depends on the transformations image, so build transformations first (or fetch from the registry). **Note:** the pyproj build must be run from the repository root (not the pyproj directory) to access validation scripts.
+The [`pyproj/Dockerfile`](pyproj/Dockerfile) builds on top of the `transformations` image and compiles pyproj from source against PROJ 9.7.1. **The build must run from the repository root** (not from `pyproj/`) to access the validation scripts.
 
-To build against your local transformations image (after building it above), reading versions from the root `Dockerfile`:
+> **libcurl note:** the pyproj image requires `libcurl3t64-gnutls` to match what `osgeo/proj:${PROJ_VERSION}` was built against. The Dockerfile handles this automatically; if you see an `ImportError: libcurl-gnutls.so.4: cannot open shared object file` at runtime, see [pyproj/README.md#troubleshooting](pyproj/README.md#troubleshooting).
+
+Build against a local `transformations` image (built in the previous step), reading versions from the root [`Dockerfile`](Dockerfile):
 
 ```bash
 docker build . -f pyproj/Dockerfile \
@@ -191,7 +205,7 @@ docker build . -f pyproj/Dockerfile \
   -t pyproj
 ```
 
-Or pass explicit values:
+Or with explicit values:
 
 ```bash
 docker build . -f pyproj/Dockerfile \
@@ -201,26 +215,30 @@ docker build . -f pyproj/Dockerfile \
   -t pyproj:3.7.2-post1
 ```
 
-To build against the registry (without a local transformations image):
+Build against the registry (no local `transformations` image needed):
 
 ```bash
 docker build . -f pyproj/Dockerfile \
   --build-arg TRANSFORMATION_IMAGE_SOURCE=ghcr.io/geodetischeinfrastructuur/ \
-  --build-arg PROJ_VERSION=$(grep -E '^ARG PROJ_VERSION=' Dockerfile | head -1 | cut -d= -f2) \
-  --build-arg POST_PATCH=$(grep -E '^ARG POST_PATCH=' Dockerfile | head -1 | cut -d= -f2) \
   -t pyproj
 ```
 
-To override the pyproj version (for testing):
+### Build the pyproj wheel
+
+The [`pyproj/build-wheel.sh`](pyproj/build-wheel.sh) script wraps the wheel build and patching steps. It runs the pyproj image, compiles the raw wheel, then patches it to bundle `libproj.so.25`, inject NSGI data, fix RPATHs, and apply PEP 440 post-release versioning.
 
 ```bash
-docker build . -f pyproj/Dockerfile \
-  --build-arg TRANSFORMATION_IMAGE_SOURCE= \
-  --build-arg PYPROJ_VERSION=3.7.2 \
-  --build-arg POST_PATCH=1 \
-  --build-arg PROJ_VERSION=$(grep -E '^ARG PROJ_VERSION=' Dockerfile | head -1 | cut -d= -f2) \
-  -t pyproj:3.7.2-post1
+# Prerequisites: pyproj image built locally (see previous section)
+chmod +x pyproj/build-wheel.sh
+pyproj/build-wheel.sh pyproj 3.7.2 1 9.7.1 dist
+
+# Output:
+ls -lh dist/pyproj*.whl
 ```
+
+Arguments: `<image-tag> <pyproj-version> <post-patch> <proj-version> [output-dir]`.
+
+For the technical details of wheel patching (RPATH fixes, RECORD hashing, NSGI data injection), see [pyproj/README.md](pyproj/README.md#wheel-build-via-docker-container).
 
 
 ## Validation
@@ -245,7 +263,8 @@ Expected output:
 To verify that NSGI transformations are correctly installed via the published wheel, run the following command (requires Linux `amd64` and Python `3.12`):
 
 ```bash
-WHEEL_URL="https://github.com/GeodetischeInfrastructuur/transformations/releases/download/9.7.1-post1-rc6/pyproj-3.7.2.post1-cp312-cp312-linux_x86_64.whl"
+# Fetch the latest wheel URL from GitHub releases (or pin a specific version)
+WHEEL_URL=$(curl -s https://api.github.com/repos/geodetischeinfrastructuur/transformations/releases | jq -r '.[0].assets[] | select(.name | endswith("cp312-cp312-linux_x86_64.whl")) | .browser_download_url')
 PROJ_NETWORK=ON uv run --python 3.12 --with "pyproj @ $WHEEL_URL" python -c '
 from pyproj import transformer
 etrf = transformer.TransformerGroup("EPSG:7931", "EPSG:7415")
@@ -275,16 +294,17 @@ Download the test datasets, transform them with this tool, and upload the result
 
 ```sh
 (
-    cd pyproj
+    cd validation/data
     curl -o 002_RDNAP.txt 'https://www.nsgi.nl/documents/1888506/1945213/002_RDNAP.txt/5d6dc6b8-a59d-40d0-0363-8a9b59e51c62?t=1574879689583'
     curl -o 002_ETRS89.txt 'https://www.nsgi.nl/documents/1888506/1944539/002_ETRS89.txt/6aa954da-d345-de97-386a-4fbd956edf52?t=1574879755720'
 )
 
-WHEEL_URL="https://github.com/GeodetischeInfrastructuur/transformations/releases/download/9.7.1-post1/pyproj-3.7.2.post1-cp312-cp312-linux_x86_64.whl"
+# Fetch the latest wheel URL from GitHub releases
+WHEEL_URL=$(curl -s https://api.github.com/repos/geodetischeinfrastructuur/transformations/releases | jq -r '.[0].assets[] | select(.name | endswith("cp312-cp312-linux_x86_64.whl")) | .browser_download_url')
 uv run --with "pyproj @ $WHEEL_URL" \
-  python pyproj/transform_csv.py pyproj/002_ETRS89.txt pyproj/002_ETRS89_transformed.txt
+  python validation/transform_csv.py validation/data/002_ETRS89.txt validation/data/002_ETRS89_transformed.txt
 uv run --with "pyproj @ $WHEEL_URL" \
-  python pyproj/transform_csv.py pyproj/002_RDNAP.txt pyproj/002_RDNAP_transformed.txt
+  python validation/transform_csv.py validation/data/002_RDNAP.txt validation/data/002_RDNAP_transformed.txt
 ```
 
 Upload the generated files to the [validation service](https://www.nsgi.nl/coordinatenstelsels-en-transformaties/tools/validatieservice). The score must be 100% for *Netherlands+EEZ*.
@@ -294,12 +314,13 @@ Upload the generated files to the [validation service](https://www.nsgi.nl/coord
 Validate transformation accuracy against reference coordinates. The file `Z001_ETRS89andRDNAP.txt` contains verified coordinate pairs in both ETRS89 and RDNAP. The script transforms each set and calculates deviation from the known values—measuring transformation accuracy.
 
 ```bash
-WHEEL_URL="https://github.com/GeodetischeInfrastructuur/transformations/releases/download/9.7.1-post1/pyproj-3.7.2.post1-cp312-cp312-linux_x86_64.whl"
+# Fetch the latest wheel URL from GitHub releases
+WHEEL_URL=$(curl -s https://api.github.com/repos/geodetischeinfrastructuur/transformations/releases | jq -r '.[0].assets[] | select(.name | endswith("cp312-cp312-linux_x86_64.whl")) | .browser_download_url')
 uv run --with "pyproj @ $WHEEL_URL" \
   python validation/validate.py validation/data/Z001_ETRS89andRDNAP.txt /tmp/Z001_ETRS89andRDNAP_transformed.csv
 ```
 
-This outputs `pyproj/data/Z001_ETRS89andRDNAP_transformed.csv` file. If correct, the transformed coordinates will have minimal deviation from the known coordinates.
+This outputs `/tmp/Z001_ETRS89andRDNAP_transformed.csv`. If correct, the transformed coordinates will have minimal deviation from the known coordinates.
 
 <!-- TODO: add check to verify if deviations are within a certain threshold. -->
 

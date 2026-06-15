@@ -1,9 +1,15 @@
+# This pyproject.toml defines only the Docker build environment used to compile
+# pyproj from source against PROJ 9.7.1 (see ../pyproj/Dockerfile). It does NOT
+# determine the published wheel's name or version — the wheel is built from the
+# upstream `pyproj` PyPI source and then patched by build-wheel.sh to bundle
+# libproj and NSGI data. The wheel keeps the upstream package name `pyproj`
+# (filename: pyproj-<PYPROJ_VERSION>.post<POST_PATCH>-cp312-cp312-linux_x86_64.whl).
 [project]
 name = "transformations"
-# version mirrors the Docker tag scheme: PYPROJ_VERSION.postPOST_PATCH
-# (PEP 440 equivalent of the 3.7.2-post1 Docker tag)
-version = "3.7.2.post1"
-description = "Add your description here"
+# Static version — this file describes the build env, not a released artifact,
+# so the version doesn't need to track PROJ/pyproj releases.
+version = "1.0.0"
+description = "Docker build environment for compiling pyproj with NSGI transformations for Dutch geodetic coordinate systems. The published wheel uses the upstream `pyproj` name — this file only configures the build env."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
