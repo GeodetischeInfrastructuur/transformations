@@ -230,7 +230,7 @@ The [`pyproj/build-wheel.sh`](pyproj/build-wheel.sh) script wraps the wheel buil
 ```bash
 # Prerequisites: pyproj image built locally (see previous section)
 chmod +x pyproj/build-wheel.sh
-pyproj/build-wheel.sh pyproj 3.7.2 1 9.7.1 dist
+pyproj/build-wheel.sh pyproj 3.7.2 1 9.7.1 ../dist
 
 # Output:
 ls -lh dist/pyproj*.whl
@@ -257,6 +257,7 @@ Expected output:
 ```txt
 312352.6004 461058.5812 -2.5206
 ```
+
 
 ### Manual validation transformations pyproj
 
