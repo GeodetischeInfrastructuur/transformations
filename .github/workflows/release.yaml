@@ -87,15 +87,24 @@ jobs:
             docker push ghcr.io/${{ steps.lowercaserepo.outputs.OWNER_LC }}/pyproj:latest
           fi
 
-      - name: "Build custom pyproj wheel"
+      - name: "Build custom pyproj wheels (standard and time-dependent)"
         run: |
           chmod +x pyproj/build-wheel.sh
+          # Build standard wheel
           pyproj/build-wheel.sh \
             "ghcr.io/${{ steps.lowercaserepo.outputs.OWNER_LC }}/pyproj:${{ steps.versions.outputs.PYPROJ_IMAGE_TAG }}" \
             "${{ steps.versions.outputs.PYPROJ_VERSION }}" \
             "${{ steps.versions.outputs.POST_PATCH }}" \
             "${{ steps.versions.outputs.PROJ_VERSION }}" \
-            "dist"
+            "../dist"
+          # Build time-dependent wheel
+          pyproj/build-wheel.sh \
+            "ghcr.io/${{ steps.lowercaserepo.outputs.OWNER_LC }}/pyproj:${{ steps.versions.outputs.PYPROJ_IMAGE_TAG }}" \
+            "${{ steps.versions.outputs.PYPROJ_VERSION }}" \
+            "${{ steps.versions.outputs.POST_PATCH }}" \
+            "${{ steps.versions.outputs.PROJ_VERSION }}" \
+            "../dist" \
+            "--time-dependent"
 
       - name: "Smoke test: validate transformations"
         run: |
