@@ -103,7 +103,7 @@ PROJ_VERSION=$(grep -E '^ARG PROJ_VERSION=' Dockerfile | head -1 | cut -d= -f2)
 
 # Build wheel using the local pyproj Docker image
 chmod +x pyproj/build-wheel.sh
-pyproj/build-wheel.sh pyproj-local "$PYPROJ_VERSION" "$POST_PATCH" "$PROJ_VERSION" dist
+pyproj/build-wheel.sh pyproj-local "$PYPROJ_VERSION" "$POST_PATCH" "$PROJ_VERSION" ../dist
 
 # Wheel is now in ./dist/
 ls -lh dist/pyproj*.whl
