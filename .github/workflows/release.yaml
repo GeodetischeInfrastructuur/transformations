@@ -95,7 +95,7 @@ jobs:
             "${{ steps.versions.outputs.PYPROJ_VERSION }}" \
             "${{ steps.versions.outputs.POST_PATCH }}" \
             "${{ steps.versions.outputs.PROJ_VERSION }}" \
-            "dist"
+            "../dist"
 
       - name: "Smoke test: validate transformations"
         run: |
