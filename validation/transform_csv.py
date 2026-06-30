@@ -44,4 +44,3 @@ if src_path:
     infile.close()
 if dst_path:
     outfile.close()
-

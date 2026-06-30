@@ -17,7 +17,9 @@ jobs:
         id: lowercaserepo
         run: |
           GH_REPO=${{ github.repository }}
+          GH_OWNER=${{ github.repository_owner }}
           echo "REPO_LC=${GH_REPO,,}" >> $GITHUB_OUTPUT
+          echo "OWNER_LC=${GH_OWNER,,}" >> $GITHUB_OUTPUT
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -29,12 +31,103 @@ jobs:
           username: ${{github.actor}}
           password: ${{secrets.GITHUB_TOKEN}}
 
-      - name: "Build image"
+      - name: "Derive version strings"
+        id: versions
+        shell: bash
         run: |
-          docker build . --tag ghcr.io/${{ steps.lowercaserepo.outputs.REPO_LC }}:latest
-          docker push ghcr.io/${{ steps.lowercaserepo.outputs.REPO_LC }}:latest
-          docker tag ghcr.io/${{ steps.lowercaserepo.outputs.REPO_LC }}:latest ghcr.io/${{ steps.lowercaserepo.outputs.REPO_LC }}:${{ github.event.release.tag_name }}
+          PROJ_VERSION=$(grep -E '^ARG PROJ_VERSION=' Dockerfile | head -1 | cut -d= -f2)
+          POST_PATCH=$(grep -E '^ARG POST_PATCH=' Dockerfile | head -1 | cut -d= -f2)
+          PYPROJ_VERSION=$(grep -E '^ARG PYPROJ_VERSION=' pyproj/Dockerfile | head -1 | cut -d= -f2)
+          # Extract any prerelease suffix from the release tag (e.g. "-rc1" from "9.7.1-post2-rc1").
+          RELEASE_TAG="${{ github.event.release.tag_name }}"
+          PRERELEASE_SUFFIX=$(echo "$RELEASE_TAG" | sed -E 's/^[0-9]+\.[0-9]+\.[0-9]+-post[0-9]+//')
+          echo "PROJ_VERSION=${PROJ_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "POST_PATCH=${POST_PATCH}" >> "$GITHUB_OUTPUT"
+          echo "PYPROJ_VERSION=${PYPROJ_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "PRERELEASE_SUFFIX=${PRERELEASE_SUFFIX}" >> "$GITHUB_OUTPUT"
+          echo "PYPROJ_IMAGE_TAG=${PYPROJ_VERSION}-post${POST_PATCH}${PRERELEASE_SUFFIX}" >> "$GITHUB_OUTPUT"
+
+      - name: "Verify release tag matches Dockerfile versions"
+        shell: bash
+        run: |
+          PROJ_VERSION="${{ steps.versions.outputs.PROJ_VERSION }}"
+          POST_PATCH="${{ steps.versions.outputs.POST_PATCH }}"
+          PRERELEASE_SUFFIX="${{ steps.versions.outputs.PRERELEASE_SUFFIX }}"
+          EXPECTED_TAG="${PROJ_VERSION}-post${POST_PATCH}${PRERELEASE_SUFFIX}"
+          ACTUAL_TAG="${{ github.event.release.tag_name }}"
+          if [[ "$ACTUAL_TAG" != "$EXPECTED_TAG" ]]; then
+            echo "ERROR: release tag '$ACTUAL_TAG' does not match Dockerfile versions."
+            echo "Expected tag: '$EXPECTED_TAG' (PROJ_VERSION=${PROJ_VERSION}, POST_PATCH=${POST_PATCH})"
+            echo "Update ARG PROJ_VERSION and/or ARG POST_PATCH in Dockerfile to match the release tag."
+            exit 1
+          fi
+
+      - name: "Build transformations image"
+        run: |
+          docker build . --tag ghcr.io/${{ steps.lowercaserepo.outputs.REPO_LC }}:${{ github.event.release.tag_name }}
           docker push ghcr.io/${{ steps.lowercaserepo.outputs.REPO_LC }}:${{ github.event.release.tag_name }}
+          if [[ "${{ github.event.release.prerelease }}" == "false" ]]; then
+            docker tag ghcr.io/${{ steps.lowercaserepo.outputs.REPO_LC }}:${{ github.event.release.tag_name }} ghcr.io/${{ steps.lowercaserepo.outputs.REPO_LC }}:latest
+            docker push ghcr.io/${{ steps.lowercaserepo.outputs.REPO_LC }}:latest
+          fi
+
+      - name: "Build pyproj image"
+        run: |
+          docker build . \
+            -f pyproj/Dockerfile \
+            --pull=false \
+            --build-arg TRANSFORMATION_IMAGE_SOURCE=ghcr.io/geodetischeinfrastructuur/ \
+            --build-arg TRANSFORMATION_IMAGE_TAG=${{ github.event.release.tag_name }} \
+            --build-arg PROJ_VERSION=${{ steps.versions.outputs.PROJ_VERSION }} \
+            --build-arg POST_PATCH=${{ steps.versions.outputs.POST_PATCH }} \
+            --tag ghcr.io/${{ steps.lowercaserepo.outputs.OWNER_LC }}/pyproj:${{ steps.versions.outputs.PYPROJ_IMAGE_TAG }}
+          docker push ghcr.io/${{ steps.lowercaserepo.outputs.OWNER_LC }}/pyproj:${{ steps.versions.outputs.PYPROJ_IMAGE_TAG }}
+          if [[ "${{ github.event.release.prerelease }}" == "false" ]]; then
+            docker tag ghcr.io/${{ steps.lowercaserepo.outputs.OWNER_LC }}/pyproj:${{ steps.versions.outputs.PYPROJ_IMAGE_TAG }} ghcr.io/${{ steps.lowercaserepo.outputs.OWNER_LC }}/pyproj:latest
+            docker push ghcr.io/${{ steps.lowercaserepo.outputs.OWNER_LC }}/pyproj:latest
+          fi
+
+      - name: "Build custom pyproj wheels (standard and time-dependent)"
+        run: |
+          chmod +x pyproj/build-wheel.sh
+          # Build standard wheel
+          pyproj/build-wheel.sh \
+            "ghcr.io/${{ steps.lowercaserepo.outputs.OWNER_LC }}/pyproj:${{ steps.versions.outputs.PYPROJ_IMAGE_TAG }}" \
+            "${{ steps.versions.outputs.PYPROJ_VERSION }}" \
+            "${{ steps.versions.outputs.POST_PATCH }}" \
+            "${{ steps.versions.outputs.PROJ_VERSION }}" \
+            "../dist"
+          # Build time-dependent wheel
+          pyproj/build-wheel.sh \
+            "ghcr.io/${{ steps.lowercaserepo.outputs.OWNER_LC }}/pyproj:${{ steps.versions.outputs.PYPROJ_IMAGE_TAG }}" \
+            "${{ steps.versions.outputs.PYPROJ_VERSION }}" \
+            "${{ steps.versions.outputs.POST_PATCH }}" \
+            "${{ steps.versions.outputs.PROJ_VERSION }}" \
+            "../dist" \
+            "--time-dependent"
+
+      - name: "Smoke test: validate transformations"
+        run: |
+          docker run --rm \
+            ghcr.io/${{ steps.lowercaserepo.outputs.OWNER_LC }}/pyproj:${{ steps.versions.outputs.PYPROJ_IMAGE_TAG }} \
+            python3 validation/validate.py validation/data/Z001_ETRS89andRDNAP.txt /tmp/validation_output.csv
+
+      - name: "Verify wheels were created"
+        run: |
+          echo "Wheels in dist/"
+          ls -lh dist/*.whl
+          WHEEL_COUNT=$(ls -1 dist/*.whl 2>/dev/null | wc -l)
+          if [[ "$WHEEL_COUNT" -lt 2 ]]; then
+            echo "ERROR: Expected 2 wheels, found $WHEEL_COUNT"
+            exit 1
+          fi
+          echo "✓ Both wheels created successfully"
+
+      - name: "Upload pyproj wheels"
+        env:
+          GH_TOKEN: ${{secrets.GITHUB_TOKEN}}
+        run: |
+          gh release upload ${{ github.event.release.tag_name }} dist/*.whl
 
       - name: "Export proj.db as package from Docker image"
         run: |
@@ -59,11 +152,3 @@ jobs:
           GH_TOKEN: ${{secrets.GITHUB_TOKEN}}
         run: |
           gh release upload ${{ github.event.release.tag_name }} proj.time.dependent.transformations.db
-
-      - name: "Upload grids"
-        env:
-          GH_TOKEN: ${{secrets.GITHUB_TOKEN}}
-        run: |
-          gh release upload ${{ github.event.release.tag_name }} grids/nl_nsgi/bq_nsgi_bongeo2004.tif
-          gh release upload ${{ github.event.release.tag_name }} grids/nl_nsgi/nllat2018.gtx
-
