@@ -57,13 +57,13 @@ includes the NSGI version and optional RC suffix.
 
 | Artifact | Example tag / filename | Versioned by |
 | :--- | :--- | :--- |
-| GitHub release / `ghcr.io/geodetischeinfrastructuur/transformations` | `2.0.0-proj9.7.1` (RC: `2.2.0-rc1-proj9.7.1`) | NSGI semver + PROJ version |
+| GitHub release / `ghcr.io/geodetischeinfrastructuur/transformations` | `2.2.0-proj9.7.1` (RC: `2.2.0-rc1-proj9.7.1`) | NSGI semver + PROJ version |
 | ↳ `proj.db` (GitHub release asset) | `proj.db` | same as above |
 | ↳ `proj.time.dependent.transformations.db` (GitHub release asset) | `proj.time.dependent.transformations.db` | same as above |
-| `ghcr.io/geodetischeinfrastructuur/pyproj` | `3.7.2-nsgi2.0.0` | pyproj version + NSGI semver |
-| ↳ `pyproj` wheel (GitHub release asset) | `pyproj-3.7.2+nsgi2.0.0-cp312-cp312-linux_x86_64.whl` | same as above |
+| `ghcr.io/geodetischeinfrastructuur/pyproj` | `3.7.2-nsgi2.2.0` | pyproj version + NSGI semver |
+| ↳ `pyproj` wheel (GitHub release asset) | `pyproj-3.7.2+nsgi2.2.0-cp312-cp312-linux_x86_64.whl` | same as above |
 
-The wheel encodes the NSGI semver as a PEP 440 **local version** (`3.7.2+nsgi2.0.0`): it keeps the upstream public version `3.7.2` (so `pyproj==3.7.2` still matches) while recording the NSGI generation. RC wheels include the RC marker in that local version, e.g. `3.7.2+nsgi2.2.0rc1`; the final wheel is `3.7.2+nsgi2.2.0`. One wheel is published per supported CPython (`cp312`–`cp315`) and per variant (standard + `1td` time-dependent).
+The wheel encodes the NSGI semver as a PEP 440 **local version** (`3.7.2+nsgi2.2.0`): it keeps the upstream public version `3.7.2` (so `pyproj==3.7.2` still matches) while recording the NSGI generation. RC wheels include the RC marker in that local version, e.g. `3.7.2+nsgi2.2.0rc1`; the final wheel is `3.7.2+nsgi2.2.0`. One wheel is published per supported CPython (`cp312`–`cp315`), and each wheel includes both databases. The standard database is in pyproj's default data directory; the time-dependent database is in the sibling `proj_time_dependent` directory.
 
 **Bumping rules** — `TRANSFORMATIONS_VERSION` follows semver:
 
@@ -116,14 +116,25 @@ RUN apt-get install -y my-libproj-dependent-app
 
 The release workflow publishes a custom `pyproj` wheel as a GitHub release asset. This is a pre-compiled wheel that bundles pyproj with NSGI transformations, custom PROJ databases, and grid files. Wheels are built for Linux `amd64` (`x86_64`) and CPython `3.12`–`3.15`.
 
-The wheel contains the Python package, compiled extension, the NSGI custom PROJ databases (`proj.db` and `proj.time.dependent.transformations.db`), and the `nl_nsgi` grid files. It is self-contained — no extra grid downloads, environment variables, or system libproj dependencies are needed after install.
+The wheel contains the Python package, compiled extension, both NSGI custom PROJ data directories, and the `nl_nsgi` grid files. It is self-contained — no extra grid downloads, environment variables, or system libproj dependencies are needed after install.
+
+The standard database is selected by default. To use the time-dependent database,
+point pyproj at the packaged sibling directory before constructing transformers:
+
+```python
+from pathlib import Path
+import pyproj
+
+time_dependent_dir = Path(pyproj.__file__).parent / "proj_dir/share/proj_time_dependent"
+pyproj.datadir.set_data_dir(str(time_dependent_dir))
+```
 
 If you use `uv`, point your project at the published wheel with a direct URL dependency. The simplest form is to replace the PyPI dependency with the release asset URL:
 
 ```toml
 [project]
 dependencies = [
-  "pyproj @ https://github.com/GeodetischeInfrastructuur/transformations/releases/download/2.0.0-proj9.7.1/pyproj-3.7.2+nsgi2.0.0-cp312-cp312-linux_x86_64.whl",
+  "pyproj @ https://github.com/GeodetischeInfrastructuur/transformations/releases/download/2.2.0-proj9.7.1/pyproj-3.7.2+nsgi2.2.0-cp312-cp312-linux_x86_64.whl",
 ]
 ```
 
@@ -136,7 +147,7 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-pyproj = { url = "https://github.com/GeodetischeInfrastructuur/transformations/releases/download/2.0.0-proj9.7.1/pyproj-3.7.2+nsgi2.0.0-cp312-cp312-linux_x86_64.whl" }
+pyproj = { url = "https://github.com/GeodetischeInfrastructuur/transformations/releases/download/2.2.0-proj9.7.1/pyproj-3.7.2+nsgi2.2.0-cp312-cp312-linux_x86_64.whl" }
 ```
 
 After updating `pyproject.toml`, run `uv lock` and `uv sync`.
@@ -164,7 +175,7 @@ This section covers building the artifacts in this repository locally. The repos
 
 - **`transformations` image** — Built from the root [`Dockerfile`](Dockerfile). Contains the NSGI-customized `proj.db` on top of `osgeo/proj`.
 - **`pyproj` image** — Built from [`pyproj/Dockerfile`](pyproj/Dockerfile). Adds pyproj compiled against PROJ 9.7.1 with NSGI data baked in.
-- **`pyproj` wheel** — Built via [`pyproj/build-wheel.sh`](pyproj/build-wheel.sh) from inside the pyproj image. Self-contained wheel with bundled PROJ, NSGI databases, and grids.
+- **`pyproj` wheel** — Built via [`pyproj/build-wheel.sh`](pyproj/build-wheel.sh) from inside the pyproj image. One self-contained wheel with bundled PROJ, both NSGI database directories, and grids.
 
 > For details on the pyproj image multi-stage build, wheel patching, RPATH manipulation, libcurl troubleshooting, and version coordination, see [pyproj/README.md](pyproj/README.md).
 
@@ -233,12 +244,12 @@ docker build . -f pyproj/Dockerfile \
 
 ### Build the pyproj wheel
 
-The [`pyproj/build-wheel.sh`](pyproj/build-wheel.sh) script wraps the wheel build and patching steps. It runs the pyproj image, compiles the raw wheel, then patches it to bundle `libproj.so.25`, inject NSGI data, fix RPATHs, and apply the PEP 440 local-version (`+nsgi<version>`).
+The [`pyproj/build-wheel.sh`](pyproj/build-wheel.sh) script wraps the wheel build and patching steps. It runs the pyproj image, compiles the raw wheel, then patches it to bundle `libproj.so.25`, inject both NSGI data directories, fix RPATHs, and apply the PEP 440 local-version (`+nsgi<version>`).
 
 ```bash
 # Prerequisites: pyproj image built locally (see previous section)
 chmod +x pyproj/build-wheel.sh
-pyproj/build-wheel.sh pyproj 3.7.2 2.0.0 9.7.1 ../dist
+pyproj/build-wheel.sh pyproj 3.7.2 2.2.0 9.7.1 ../dist
 
 # Output:
 ls -lh dist/pyproj*.whl
