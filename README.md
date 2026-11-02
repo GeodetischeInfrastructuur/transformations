@@ -175,21 +175,21 @@ The root [`Dockerfile`](Dockerfile) builds the `transformations` image. It appli
 Build with default versions (read from [`Dockerfile`](Dockerfile) `ARG` defaults):
 
 ```bash
-docker build -t transformations:2.0.0-proj9.7.1 -t transformations .
+docker build -t transformations:2.2.0-proj9.7.1 -t transformations .
 ```
 
 Override `PROJ_VERSION` or `TRANSFORMATIONS_VERSION` via build args:
 
 ```bash
-docker build -t transformations:2.0.0-proj9.7.1 . \
+docker build -t transformations:2.2.0-proj9.7.1 . \
   --build-arg PROJ_VERSION=9.7.1 \
-  --build-arg TRANSFORMATIONS_VERSION=2.0.0
+  --build-arg TRANSFORMATIONS_VERSION=2.2.0
 ```
 
 Verify the build with `cs2cs`:
 
 ```bash
-docker run --rm transformations:2.0.0-proj9.7.1 \
+docker run --rm transformations:2.2.0-proj9.7.1 \
   sh -c 'echo "52.115330444 7.684748554 41.4160" | cs2cs -f "%.4f" EPSG:7931 EPSG:7415'
 # Expected: 312352.6004 461058.5812 -2.5206
 ```
@@ -216,9 +216,9 @@ Or with explicit values:
 docker build . -f pyproj/Dockerfile \
   --build-arg TRANSFORMATION_IMAGE_SOURCE= \
   --build-arg PROJ_VERSION=9.7.1 \
-  --build-arg TRANSFORMATIONS_VERSION=2.0.0 \
-  --build-arg TRANSFORMATION_IMAGE_TAG=2.0.0-proj9.7.1 \
-  -t pyproj:3.7.2-nsgi2.0.0
+  --build-arg TRANSFORMATIONS_VERSION=2.2.0 \
+  --build-arg TRANSFORMATION_IMAGE_TAG=2.2.0-proj9.7.1 \
+  -t pyproj:3.7.2-nsgi2.2.0
 ```
 
 Build against the registry (no local `transformations` image needed):
@@ -226,6 +226,8 @@ Build against the registry (no local `transformations` image needed):
 ```bash
 docker build . -f pyproj/Dockerfile \
   --build-arg TRANSFORMATION_IMAGE_SOURCE=ghcr.io/geodetischeinfrastructuur/ \
+  --build-arg PROJ_VERSION=$(grep -E '^ARG PROJ_VERSION=' Dockerfile | head -1 | cut -d= -f2) \
+  --build-arg TRANSFORMATIONS_VERSION=$(grep -E '^ARG TRANSFORMATIONS_VERSION=' Dockerfile | head -1 | cut -d= -f2) \
   -t pyproj
 ```
 

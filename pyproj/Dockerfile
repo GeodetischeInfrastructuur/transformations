@@ -4,13 +4,13 @@
 #
 ARG PYTHON_VERSION=3.12
 ARG PYPROJ_VERSION=3.7.2
-ARG PROJ_VERSION=9.7.1
-ARG TRANSFORMATIONS_VERSION=2.2.0
+ARG PROJ_VERSION
+ARG TRANSFORMATIONS_VERSION
 ARG TRANSFORMATIONS_PRERELEASE_SUFFIX=
 ARG TRANSFORMATION_IMAGE_SOURCE=ghcr.io/geodetischeinfrastructuur/
 ARG TRANSFORMATION_IMAGE_TAG=${TRANSFORMATIONS_VERSION}${TRANSFORMATIONS_PRERELEASE_SUFFIX}-proj${PROJ_VERSION}
 # PYPROJ_VERSION is managed here (source of truth for the Python wrapper).
-# PROJ_VERSION and TRANSFORMATIONS_VERSION must be passed by the release workflow or via --build-arg from the root Dockerfile.
+# PROJ_VERSION and TRANSFORMATIONS_VERSION must be supplied by the build caller; TRANSFORMATIONS_VERSION is sourced from the root Dockerfile.
 # this image is versioned by pyproj: PYPROJ_VERSION-nsgiTRANSFORMATIONS_VERSION (e.g. 3.7.2-nsgi2.0.0)
 
 FROM osgeo/proj:${PROJ_VERSION} AS proj-source
@@ -26,6 +26,7 @@ FROM ghcr.io/astral-sh/uv:latest AS uv-source
 FROM ubuntu:24.04
 
 ARG PYTHON_VERSION
+ARG PROJ_VERSION
 WORKDIR /app
 
 COPY --from=uv-source /uv /uvx /usr/local/bin/
@@ -59,8 +60,8 @@ RUN uv python install "${PYTHON_VERSION}"
 
 COPY pyproj/pyproject.toml pyproj/uv.lock ./
 COPY validation/ ./validation/
-# compile pyproj from source against PROJ 9.7.1; PROJ_DIR and PROJ_VERSION avoid needing the proj binary at build time
-RUN PROJ_DIR=/usr PROJ_VERSION=9.7.1 uv sync --no-binary-package pyproj
+# compile pyproj from source against the selected PROJ version
+RUN PROJ_DIR=/usr PROJ_VERSION="${PROJ_VERSION}" uv sync --no-binary-package pyproj
 
 # copy NSGI proj data into pyproj's internal data dir so pyproj picks it up automatically
 # (pyproj checks <package>/proj_dir/share/proj before any env var or system path)
@@ -71,7 +72,6 @@ COPY --from=proj-source /nlnsgi-grids/ /app/.venv/lib/python${PYTHON_VERSION}/si
 ENV PATH="/app/.venv/bin:$PATH"
 
 ARG PYPROJ_VERSION
-ARG PROJ_VERSION
 ARG TRANSFORMATIONS_VERSION
 ARG TRANSFORMATIONS_PRERELEASE_SUFFIX
 LABEL org.opencontainers.image.version="${PYPROJ_VERSION}-nsgi${TRANSFORMATIONS_VERSION}${TRANSFORMATIONS_PRERELEASE_SUFFIX}" \
