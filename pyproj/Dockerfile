@@ -5,12 +5,13 @@
 ARG PYTHON_VERSION=3.12
 ARG PYPROJ_VERSION=3.7.2
 ARG PROJ_VERSION=9.7.1
-ARG POST_PATCH=1
+ARG TRANSFORMATIONS_VERSION=2.0.0
+ARG TRANSFORMATIONS_PRERELEASE_SUFFIX=
 ARG TRANSFORMATION_IMAGE_SOURCE=ghcr.io/geodetischeinfrastructuur/
-ARG TRANSFORMATION_IMAGE_TAG=${PROJ_VERSION}-post${POST_PATCH}
+ARG TRANSFORMATION_IMAGE_TAG=${TRANSFORMATIONS_VERSION}${TRANSFORMATIONS_PRERELEASE_SUFFIX}-proj${PROJ_VERSION}
 # PYPROJ_VERSION is managed here (source of truth for the Python wrapper).
-# PROJ_VERSION and POST_PATCH must be passed by the release workflow or via --build-arg from the root Dockerfile.
-# this image is versioned by pyproj: PYPROJ_VERSION-postPOST_PATCH (e.g. 3.7.2-post1)
+# PROJ_VERSION and TRANSFORMATIONS_VERSION must be passed by the release workflow or via --build-arg from the root Dockerfile.
+# this image is versioned by pyproj: PYPROJ_VERSION-nsgiTRANSFORMATIONS_VERSION (e.g. 3.7.2-nsgi2.0.0)
 
 FROM osgeo/proj:${PROJ_VERSION} AS proj-source
 # download nl_nsgi grids from cdn.proj.org so the pyproj image works out of the box
@@ -36,18 +37,27 @@ COPY --from=proj-source /usr/lib/x86_64-linux-gnu/libproj.so /usr/lib/x86_64-lin
 COPY --from=proj-source /usr/include/*.h /usr/include/
 COPY --from=proj-source /usr/include/proj/ /usr/include/proj/
 
-# install Python 3.12, gcc, patchelf, and all runtime dependencies of libproj (sqlite3, tiff, curl+TLS chain)
+# install gcc + patchelf (build tools) and all runtime dependencies of libproj
+# (sqlite3, tiff, curl+TLS chain). ca-certificates lets uv download the managed
+# CPython build over TLS. No system python is installed — the interpreter is
+# provided by uv (see UV_PYTHON), so one Dockerfile builds for any CPython 3.12-3.15.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.12 \
-    python3.12-dev \
     gcc \
+    libc6-dev \
     patchelf \
+    ca-certificates \
     libsqlite3-0 \
     libtiff6 \
     libcurl3t64-gnutls \
     && rm -rf /var/lib/apt/lists/*
 
-COPY pyproj/pyproject.toml pyproj/uv.lock pyproj/.python-version ./
+# Pin the interpreter for every uv/uvx call (uv sync here and `uvx pip wheel` in
+# build-wheel.sh) so the compiled extension — and thus the wheel's ABI tag
+# (cp312/cp313/cp314/cp315) — matches PYTHON_VERSION.
+ENV UV_PYTHON=${PYTHON_VERSION}
+RUN uv python install "${PYTHON_VERSION}"
+
+COPY pyproj/pyproject.toml pyproj/uv.lock ./
 COPY validation/ ./validation/
 # compile pyproj from source against PROJ 9.7.1; PROJ_DIR and PROJ_VERSION avoid needing the proj binary at build time
 RUN PROJ_DIR=/usr PROJ_VERSION=9.7.1 uv sync --no-binary-package pyproj
@@ -62,6 +72,7 @@ ENV PATH="/app/.venv/bin:$PATH"
 
 ARG PYPROJ_VERSION
 ARG PROJ_VERSION
-ARG POST_PATCH
-LABEL org.opencontainers.image.version="${PYPROJ_VERSION}-post${POST_PATCH}" \
-    org.opencontainers.image.description="pyproj ${PYPROJ_VERSION} with NSGI transformations compiled against PROJ ${PROJ_VERSION} (post${POST_PATCH})"
+ARG TRANSFORMATIONS_VERSION
+ARG TRANSFORMATIONS_PRERELEASE_SUFFIX
+LABEL org.opencontainers.image.version="${PYPROJ_VERSION}-nsgi${TRANSFORMATIONS_VERSION}${TRANSFORMATIONS_PRERELEASE_SUFFIX}" \
+    org.opencontainers.image.description="pyproj ${PYPROJ_VERSION} with NSGI transformations ${TRANSFORMATIONS_VERSION}${TRANSFORMATIONS_PRERELEASE_SUFFIX} compiled against PROJ ${PROJ_VERSION}"

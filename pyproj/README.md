@@ -6,7 +6,7 @@ This directory contains the Docker configuration and build scripts for the `pypr
 
 ### Docker Image Build (`docker build . -f pyproj/Dockerfile`)
 
-The Docker image (`ghcr.io/geodetischeinfrastructuur/pyproj:3.7.2-post1`) packages pyproj with NSGI customizations into a ready-to-use container:
+The Docker image (`ghcr.io/geodetischeinfrastructuur/pyproj:3.7.2-nsgi2.0.0`) packages pyproj with NSGI customizations into a ready-to-use container:
 
 1. **Base Stages (multi-stage build):**
    - `proj-source` — Extracts PROJ 9.7.1 libraries, headers, and nl_nsgi grids from `osgeo/proj:9.7.1`
@@ -14,7 +14,7 @@ The Docker image (`ghcr.io/geodetischeinfrastructuur/pyproj:3.7.2-post1`) packag
    - `uv-source` — Extracts the `uv` package manager binary
 
 2. **Final Stage (Ubuntu 24.04):**
-   - Install Python 3.12, build tools (gcc, patchelf), and runtime dependencies (`libsqlite3`, `libtiff6`, `libcurl3t64-gnutls`)
+   - Install build tools (gcc, libc development headers, patchelf) and runtime dependencies (`libsqlite3`, `libtiff6`, `libcurl3t64-gnutls`); the CPython interpreter (3.12–3.15, selected by `PYTHON_VERSION`) is provided by uv (`UV_PYTHON`)
    - Copy PROJ 9.7.1 libraries and headers from `proj-source`
    - Run `uv sync --no-binary-package pyproj` to compile pyproj from source against PROJ 9.7.1
    - Copy NSGI proj databases and grids into pyproj's internal data directory
@@ -24,7 +24,7 @@ The Docker image (`ghcr.io/geodetischeinfrastructuur/pyproj:3.7.2-post1`) packag
 
 ### Wheel Build (via Docker container)
 
-The wheel (`pyproj-3.7.2.post1-cp312-cp312-linux_x86_64.whl`) is built inside the Docker image and then patched:
+The wheel (`pyproj-3.7.2+nsgi2.0.0-cp312-cp312-linux_x86_64.whl`) is built inside the Docker image and then patched:
 
 1. **Wheel compilation:**
    - Run `uvx pip wheel --no-deps --no-binary pyproj` inside the pyproj Docker image
@@ -35,7 +35,7 @@ The wheel (`pyproj-3.7.2.post1-cp312-cp312-linux_x86_64.whl`) is built inside th
    - **Bundle libproj.so.25:** Copy the PROJ 9.7.1 library into `pyproj.libs/` inside the wheel
    - **Patch RPATH:** Use `patchelf` to update all compiled `.so` files to search `pyproj.libs/` first, ensuring they load the bundled PROJ 9.7.1 at runtime
    - **Inject NSGI data:** Copy NSGI proj databases (`proj.db`, `proj.time.dependent.transformations.db`) and grids into `pyproj/proj_dir/share/proj/` inside the wheel
-   - **PEP 440 versioning:** If `POST_PATCH` is set, bump the version from `3.7.2` to `3.7.2.post1` in METADATA and the wheel filename
+   - **PEP 440 versioning:** Append a local version from `3.7.2` to `3.7.2+nsgi2.0.0`; for an RC, the release suffix is included, e.g. `3.7.2+nsgi2.0.0rc1`, in METADATA and the wheel filename
    - **Recalculate RECORD:** Update SHA256 hashes for all files to match the wheel spec
 
 **Result:** A self-contained wheel that bundles pyproj, PROJ 9.7.1, NSGI databases, and grids. No system libproj or environment variables needed after install.
@@ -68,7 +68,7 @@ Then install the **exact matching variant** in [Dockerfile](Dockerfile). Do not 
 
 ### Version mismatch between Dockerfiles
 
-If the pyproj image build fails with version mismatches, ensure `PROJ_VERSION` and `POST_PATCH` in the root [../Dockerfile](../Dockerfile) match what's passed to [Dockerfile](Dockerfile). Run the build commands from the repository root, not from subdirectories.
+If the pyproj image build fails with version mismatches, ensure `PROJ_VERSION` and `TRANSFORMATIONS_VERSION` in the root [../Dockerfile](../Dockerfile) match what's passed to [Dockerfile](Dockerfile). Run the build commands from the repository root, not from subdirectories.
 
 ### RPATH patch failures
 
@@ -84,7 +84,7 @@ docker build . -f pyproj/Dockerfile \
   --pull=false \
   --build-arg TRANSFORMATION_IMAGE_SOURCE= \
   --build-arg PROJ_VERSION=9.7.1 \
-  --build-arg POST_PATCH=1 \
+  --build-arg TRANSFORMATIONS_VERSION=2.0.0 \
   -t pyproj-local
 
 # Test inside container
@@ -98,12 +98,12 @@ To build the wheel locally, use the `build-wheel.sh` script from the repository 
 ```bash
 # Extract versions from Dockerfiles
 PYPROJ_VERSION=$(grep -E '^ARG PYPROJ_VERSION=' pyproj/Dockerfile | head -1 | cut -d= -f2)
-POST_PATCH=$(grep -E '^ARG POST_PATCH=' Dockerfile | head -1 | cut -d= -f2)
+TRANSFORMATIONS_VERSION=$(grep -E '^ARG TRANSFORMATIONS_VERSION=' Dockerfile | head -1 | cut -d= -f2)
 PROJ_VERSION=$(grep -E '^ARG PROJ_VERSION=' Dockerfile | head -1 | cut -d= -f2)
 
 # Build wheel using the local pyproj Docker image
 chmod +x pyproj/build-wheel.sh
-pyproj/build-wheel.sh pyproj-local "$PYPROJ_VERSION" "$POST_PATCH" "$PROJ_VERSION" ../dist
+pyproj/build-wheel.sh pyproj-local "$PYPROJ_VERSION" "$TRANSFORMATIONS_VERSION" "$PROJ_VERSION" ../dist
 
 # Wheel is now in ./dist/
 ls -lh dist/pyproj*.whl
