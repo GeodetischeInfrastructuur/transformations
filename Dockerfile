@@ -1,15 +1,18 @@
 ARG PROJ_VERSION=9.7.1
-ARG POST_PATCH=1
-# These manage the PROJ version and NSGI config patch level (source of truth for both images).
-# For local builds, these defaults will be used. The release workflow reads them here and
-# passes them to pyproj/Dockerfile via --build-arg.
-# image tag follows PROJ_VERSION-postPOST_PATCH (e.g. 9.7.1-post1)
+ARG TRANSFORMATIONS_VERSION=2.0.0
+ARG TRANSFORMATIONS_PRERELEASE_SUFFIX=
+# PROJ_VERSION pins the libproj line; TRANSFORMATIONS_VERSION is the NSGI config
+# semver (source of truth for both images). For local builds these defaults are
+# used. The release workflow reads them here and passes them to pyproj/Dockerfile
+# via --build-arg.
+# release tag follows TRANSFORMATIONS_VERSION[-rcN]-projPROJ_VERSION
 
 FROM osgeo/proj:${PROJ_VERSION}
 ARG PROJ_VERSION
-ARG POST_PATCH
-LABEL org.opencontainers.image.version="${PROJ_VERSION}-post${POST_PATCH}" \
-    org.opencontainers.image.description="PROJ ${PROJ_VERSION} with NSGI transformations (post${POST_PATCH})"
+ARG TRANSFORMATIONS_VERSION
+ARG TRANSFORMATIONS_PRERELEASE_SUFFIX
+LABEL org.opencontainers.image.version="${TRANSFORMATIONS_VERSION}${TRANSFORMATIONS_PRERELEASE_SUFFIX}-proj${PROJ_VERSION}" \
+    org.opencontainers.image.description="PROJ ${PROJ_VERSION} with NSGI transformations ${TRANSFORMATIONS_VERSION}${TRANSFORMATIONS_PRERELEASE_SUFFIX}"
 RUN apt-get -y update &&  \
     apt-get install --no-install-recommends -y \
     sqlite3 && \

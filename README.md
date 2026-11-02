@@ -2,8 +2,8 @@
 
 [![GitHub license](https://img.shields.io/github/license/GeodetischeInfrastructuur/Transformations)](https://github.com/GeodetischeInfrastructuur/Transformations/blob/main/LICENSE)
 [![GitHub Release](https://img.shields.io/github/v/release/GeodetischeInfrastructuur/transformations)](https://github.com/GeodetischeInfrastructuur/transformations/releases)
-[![PROJ](https://img.shields.io/badge/PROJ-9.7.1--post1-blue)](https://github.com/geodetischeinfrastructuur/transformations/pkgs/container/transformations)
-[![pyproj](https://img.shields.io/badge/pyproj-3.7.2--post1-blue)](https://github.com/geodetischeinfrastructuur/transformations/pkgs/container/pyproj)
+[![Transformations](https://img.shields.io/badge/Transformations-2.0.0--proj9.7.1-blue)](https://github.com/geodetischeinfrastructuur/transformations/pkgs/container/transformations)
+[![pyproj](https://img.shields.io/badge/pyproj-3.7.2--nsgi2.0.0-blue)](https://github.com/geodetischeinfrastructuur/transformations/pkgs/container/pyproj)
 
 This repository contains a modified proj.db that implements the following
 transformations according to the recommendations of the NSGI (see image below).
@@ -49,38 +49,43 @@ repository.
 
 ## Versioning
 
-Both Docker images use a `BASE_VERSION-postN` tag scheme, where `N` is incremented for NSGI configuration changes.
-For `ghcr.io/geodetischeinfrastructuur/transformations`, `BASE_VERSION` is the PROJ version.
-For `ghcr.io/geodetischeinfrastructuur/pyproj`, `BASE_VERSION` is the pyproj version.
+The GitHub release and `transformations` image tag lead with the NSGI
+transformations semver: `{TRANSFORMATIONS_VERSION}[-rcN]-proj{PROJ_VERSION}`.
+For example, `2.2.0-rc1-proj9.7.1` is an RC and `2.2.0-proj9.7.1` is its final
+release. The `pyproj` image tag remains based on the upstream pyproj version and
+includes the NSGI version and optional RC suffix.
 
 | Artifact | Example tag / filename | Versioned by |
 | :--- | :--- | :--- |
-| `ghcr.io/geodetischeinfrastructuur/transformations` | `9.7.1-post1` | PROJ version |
+| GitHub release / `ghcr.io/geodetischeinfrastructuur/transformations` | `2.0.0-proj9.7.1` (RC: `2.2.0-rc1-proj9.7.1`) | NSGI semver + PROJ version |
 | ↳ `proj.db` (GitHub release asset) | `proj.db` | same as above |
 | ↳ `proj.time.dependent.transformations.db` (GitHub release asset) | `proj.time.dependent.transformations.db` | same as above |
-| `ghcr.io/geodetischeinfrastructuur/pyproj` | `3.7.2-post1` | pyproj version |
-| ↳ `pyproj` wheel (GitHub release asset) | `pyproj-3.7.2.post1-cp312-cp312-linux_x86_64.whl` | same as above |
+| `ghcr.io/geodetischeinfrastructuur/pyproj` | `3.7.2-nsgi2.0.0` | pyproj version + NSGI semver |
+| ↳ `pyproj` wheel (GitHub release asset) | `pyproj-3.7.2+nsgi2.0.0-cp312-cp312-linux_x86_64.whl` | same as above |
 
-**Bumping rules** — `N` is always incremented, never reset:
+The wheel encodes the NSGI semver as a PEP 440 **local version** (`3.7.2+nsgi2.0.0`): it keeps the upstream public version `3.7.2` (so `pyproj==3.7.2` still matches) while recording the NSGI generation. RC wheels include the RC marker in that local version, e.g. `3.7.2+nsgi2.2.0rc1`; the final wheel is `3.7.2+nsgi2.2.0`. One wheel is published per supported CPython (`cp312`–`cp315`) and per variant (standard + `1td` time-dependent).
 
-- NSGI config change → increment `N` (e.g. `9.7.1-post1` → `9.7.1-post2`)
-- PROJ version update → bump `PROJ_VERSION`, increment `N` (e.g. `9.7.2-post3`)
-- pyproj version update → bump `PYPROJ_VERSION`, increment `N` (e.g. `3.7.3-post4`)
+**Bumping rules** — `TRANSFORMATIONS_VERSION` follows semver:
 
-Both images are always released together from a single GitHub release. The release tag encodes the PROJ version because that is the shared base both images are built on — the `transformations` tag answers "which PROJ version?" for both images. `N` is a global counter across all releases; resetting it on a version bump would risk overwriting a previous tag.
+- NSGI config change → bump `TRANSFORMATIONS_VERSION` (new transformation/CRS → minor `2.1.0-proj9.7.1`; no-result fix → patch `2.0.1-proj9.7.1`; breaking change → major `3.0.0-proj9.7.1`)
+- PROJ version update → bump `PROJ_VERSION` (e.g. `2.0.0-proj9.7.2`)
+- pyproj version update → bump `PYPROJ_VERSION` (e.g. pyproj image `3.7.3-nsgi2.0.0`)
+
+Both images are always released together from a single GitHub release. The release tag leads with the NSGI semver and includes the PROJ version (`2.2.0-rc1-proj9.7.1` for an RC; `2.2.0-proj9.7.1` for final).
 
 > **To create a new release:**
 > 1. Edit as needed:
->    - [`Dockerfile`](Dockerfile) — for NSGI config changes or PROJ version updates: bump `ARG PROJ_VERSION` and/or `ARG POST_PATCH`
+>    - [`Dockerfile`](Dockerfile) — for NSGI config changes or PROJ version updates: bump `ARG PROJ_VERSION` and/or `ARG TRANSFORMATIONS_VERSION`
 >    - [`pyproj/Dockerfile`](pyproj/Dockerfile) — only for pyproj version updates: bump `ARG PYPROJ_VERSION`
-> 2. Create and publish a GitHub release with tag matching `{PROJ_VERSION}-post{POST_PATCH}` (e.g. `9.7.1-post2`).
+> 2. Create and publish a GitHub release with tag matching `{TRANSFORMATIONS_VERSION}[-rcN]-proj{PROJ_VERSION}` (e.g. `2.1.0-proj9.7.1` or `2.2.0-rc1-proj9.7.1`). Mark RC releases as prereleases in GitHub.
 >
 > The release workflow:
-> - Reads `PROJ_VERSION` and `POST_PATCH` from the root `Dockerfile`
+> - Reads `PROJ_VERSION` and `TRANSFORMATIONS_VERSION` from the root `Dockerfile`
 > - Reads `PYPROJ_VERSION` from `pyproj/Dockerfile`
 > - Builds the transformations image (using root Dockerfile values)
 > - Passes PROJ version strings to pyproj build
-> - Applies derived versions to both Docker image tags, the wheel version, and the wheel filename
+> - Uses the release tag for the transformations image and derives pyproj image tags from the Dockerfile versions
+> - Includes `rcN` in prerelease wheel versions and filenames (e.g. `+nsgi2.2.0rc1`)
 
 ## Integration
 
@@ -109,7 +114,7 @@ RUN apt-get install -y my-libproj-dependent-app
 
 ### 2. Install the published custom pyproj wheel with uv
 
-The release workflow publishes a custom `pyproj` wheel as a GitHub release asset. This is a pre-compiled wheel that bundles pyproj with NSGI transformations, custom PROJ databases, and grid files. As built today, the wheel is for Linux `amd64` (`x86_64`) and CPython `3.12` only.
+The release workflow publishes a custom `pyproj` wheel as a GitHub release asset. This is a pre-compiled wheel that bundles pyproj with NSGI transformations, custom PROJ databases, and grid files. Wheels are built for Linux `amd64` (`x86_64`) and CPython `3.12`–`3.15`.
 
 The wheel contains the Python package, compiled extension, the NSGI custom PROJ databases (`proj.db` and `proj.time.dependent.transformations.db`), and the `nl_nsgi` grid files. It is self-contained — no extra grid downloads, environment variables, or system libproj dependencies are needed after install.
 
@@ -118,7 +123,7 @@ If you use `uv`, point your project at the published wheel with a direct URL dep
 ```toml
 [project]
 dependencies = [
-  "pyproj @ https://github.com/GeodetischeInfrastructuur/transformations/releases/download/9.7.1-post1/pyproj-3.7.2.post1-cp312-cp312-linux_x86_64.whl",
+  "pyproj @ https://github.com/GeodetischeInfrastructuur/transformations/releases/download/2.0.0-proj9.7.1/pyproj-3.7.2+nsgi2.0.0-cp312-cp312-linux_x86_64.whl",
 ]
 ```
 
@@ -127,16 +132,16 @@ If you want to keep the dependency name separate from the wheel location, use a 
 ```toml
 [project]
 dependencies = [
-  "pyproj==3.7.2.post1",
+  "pyproj==3.7.2",
 ]
 
 [tool.uv.sources]
-pyproj = { url = "https://github.com/GeodetischeInfrastructuur/transformations/releases/download/9.7.1-post1/pyproj-3.7.2.post1-cp312-cp312-linux_x86_64.whl" }
+pyproj = { url = "https://github.com/GeodetischeInfrastructuur/transformations/releases/download/2.0.0-proj9.7.1/pyproj-3.7.2+nsgi2.0.0-cp312-cp312-linux_x86_64.whl" }
 ```
 
 After updating `pyproject.toml`, run `uv lock` and `uv sync`.
 
-This wheel is intended for local Python environments and Docker images that run on Linux `amd64` with Python `3.12`. For other platforms or Python versions, use the Docker image or build from source instead.
+This wheel is intended for local Python environments and Docker images that run on Linux `amd64` with Python `3.12`–`3.15`. For other platforms or Python versions, use the Docker image or build from source instead.
 
 ### 3. Manual setup for local Python environments
 
@@ -170,21 +175,21 @@ The root [`Dockerfile`](Dockerfile) builds the `transformations` image. It appli
 Build with default versions (read from [`Dockerfile`](Dockerfile) `ARG` defaults):
 
 ```bash
-docker build -t transformations .
+docker build -t transformations:2.0.0-proj9.7.1 -t transformations .
 ```
 
-Override `PROJ_VERSION` or `POST_PATCH` via build args:
+Override `PROJ_VERSION` or `TRANSFORMATIONS_VERSION` via build args:
 
 ```bash
-docker build -t transformations:9.7.1-post1 . \
+docker build -t transformations:2.0.0-proj9.7.1 . \
   --build-arg PROJ_VERSION=9.7.1 \
-  --build-arg POST_PATCH=1
+  --build-arg TRANSFORMATIONS_VERSION=2.0.0
 ```
 
 Verify the build with `cs2cs`:
 
 ```bash
-docker run --rm transformations \
+docker run --rm transformations:2.0.0-proj9.7.1 \
   sh -c 'echo "52.115330444 7.684748554 41.4160" | cs2cs -f "%.4f" EPSG:7931 EPSG:7415'
 # Expected: 312352.6004 461058.5812 -2.5206
 ```
@@ -201,7 +206,7 @@ Build against a local `transformations` image (built in the previous step), read
 docker build . -f pyproj/Dockerfile \
   --build-arg TRANSFORMATION_IMAGE_SOURCE= \
   --build-arg PROJ_VERSION=$(grep -E '^ARG PROJ_VERSION=' Dockerfile | head -1 | cut -d= -f2) \
-  --build-arg POST_PATCH=$(grep -E '^ARG POST_PATCH=' Dockerfile | head -1 | cut -d= -f2) \
+  --build-arg TRANSFORMATIONS_VERSION=$(grep -E '^ARG TRANSFORMATIONS_VERSION=' Dockerfile | head -1 | cut -d= -f2) \
   -t pyproj
 ```
 
@@ -211,8 +216,9 @@ Or with explicit values:
 docker build . -f pyproj/Dockerfile \
   --build-arg TRANSFORMATION_IMAGE_SOURCE= \
   --build-arg PROJ_VERSION=9.7.1 \
-  --build-arg POST_PATCH=1 \
-  -t pyproj:3.7.2-post1
+  --build-arg TRANSFORMATIONS_VERSION=2.0.0 \
+  --build-arg TRANSFORMATION_IMAGE_TAG=2.0.0-proj9.7.1 \
+  -t pyproj:3.7.2-nsgi2.0.0
 ```
 
 Build against the registry (no local `transformations` image needed):
@@ -225,18 +231,21 @@ docker build . -f pyproj/Dockerfile \
 
 ### Build the pyproj wheel
 
-The [`pyproj/build-wheel.sh`](pyproj/build-wheel.sh) script wraps the wheel build and patching steps. It runs the pyproj image, compiles the raw wheel, then patches it to bundle `libproj.so.25`, inject NSGI data, fix RPATHs, and apply PEP 440 post-release versioning.
+The [`pyproj/build-wheel.sh`](pyproj/build-wheel.sh) script wraps the wheel build and patching steps. It runs the pyproj image, compiles the raw wheel, then patches it to bundle `libproj.so.25`, inject NSGI data, fix RPATHs, and apply the PEP 440 local-version (`+nsgi<version>`).
 
 ```bash
 # Prerequisites: pyproj image built locally (see previous section)
 chmod +x pyproj/build-wheel.sh
-pyproj/build-wheel.sh pyproj 3.7.2 1 9.7.1 ../dist
+pyproj/build-wheel.sh pyproj 3.7.2 2.0.0 9.7.1 ../dist
 
 # Output:
 ls -lh dist/pyproj*.whl
 ```
 
-Arguments: `<image-tag> <pyproj-version> <post-patch> <proj-version> [output-dir]`.
+Arguments: `<image-tag> <pyproj-version> <transformations-version> <proj-version> [output-dir]`.
+For a release candidate, set `TRANSFORMATIONS_PRERELEASE_SUFFIX=-rc1` when
+running the script; the wheel's local version will end in `rc1` (for example,
+`pyproj-3.7.2+nsgi2.2.0rc1-cp312-...whl`).
 
 For the technical details of wheel patching (RPATH fixes, RECORD hashing, NSGI data injection), see [pyproj/README.md](pyproj/README.md#wheel-build-via-docker-container).
 
@@ -248,7 +257,7 @@ For the technical details of wheel patching (RPATH fixes, RECORD hashing, NSGI d
 To verify that NSGI transformations are correctly installed in the  PROJ environment, you can use the `cs2cs` command to transform coordinates:
 
 ```bash
-docker build -t transformations .
+docker build -t transformations:2.0.0-proj9.7.1 -t transformations .
 docker run --rm transformations sh -c 'echo "52.115330444 7.684748554 41.4160" | cs2cs -f "%.4f" EPSG:7931 EPSG:7415'
 ```
 
