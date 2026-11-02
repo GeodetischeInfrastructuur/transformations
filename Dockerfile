@@ -19,6 +19,6 @@ RUN apt-get -y update &&  \
     rm -rf /var/lib/apt/lists/*
 COPY sql /sql
 COPY configure-proj.sh /configure-proj.sh
-RUN /configure-proj.sh /usr/share/proj /sql
+RUN /configure-proj.sh /usr/share/proj /sql "${TRANSFORMATIONS_VERSION}"
 # Configure PROJ CDN endpoint so network-based grid downloads work
 RUN printf '[projnetwork]\nendpoint=https://cdn.proj.org\n' > /usr/share/proj/proj.ini

@@ -149,7 +149,7 @@ If Docker is unavailable, configure pyproj manually. This requires cloning this 
 
 ```sh
 proj_dir=$(python -c 'import pyproj;print(pyproj.datadir.get_data_dir())')
-./configure-proj.sh "$proj_dir" ./sql
+./configure-proj.sh "$proj_dir" ./sql 2.0.0
 # Download grids for NSGI transformations
 projsync --source-id nl_nsgi --target-dir "$proj_dir"
 # or use --all (+700 MB) to download all grids

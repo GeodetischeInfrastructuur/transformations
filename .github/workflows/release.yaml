@@ -100,6 +100,7 @@ jobs:
           TRANSFORMATIONS_PRERELEASE_SUFFIX: ${{ steps.versions.outputs.PRERELEASE_SUFFIX }}
         run: |
           docker build . \
+            --build-arg TRANSFORMATIONS_VERSION="${{ steps.versions.outputs.TRANSFORMATIONS_VERSION }}" \
             --build-arg TRANSFORMATIONS_PRERELEASE_SUFFIX="${TRANSFORMATIONS_PRERELEASE_SUFFIX}" \
             --tag ghcr.io/${{ steps.lowercaserepo.outputs.REPO_LC }}:${{ github.event.release.tag_name }}
           docker push ghcr.io/${{ steps.lowercaserepo.outputs.REPO_LC }}:${{ github.event.release.tag_name }}
