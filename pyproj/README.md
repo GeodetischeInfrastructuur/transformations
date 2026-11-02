@@ -83,8 +83,8 @@ See the main [../README.md](../README.md#building-images-locally) for build comm
 docker build . -f pyproj/Dockerfile \
   --pull=false \
   --build-arg TRANSFORMATION_IMAGE_SOURCE= \
-  --build-arg PROJ_VERSION=9.7.1 \
-  --build-arg TRANSFORMATIONS_VERSION=2.0.0 \
+   --build-arg PROJ_VERSION=$(grep -E '^ARG PROJ_VERSION=' Dockerfile | head -1 | cut -d= -f2) \
+   --build-arg TRANSFORMATIONS_VERSION=$(grep -E '^ARG TRANSFORMATIONS_VERSION=' Dockerfile | head -1 | cut -d= -f2) \
   -t pyproj-local
 
 # Test inside container
@@ -120,7 +120,7 @@ For development/testing, you can also build the wheel directly without patching:
 # Just build raw wheel (without NSGI data or PROJ bundling)
 docker run --rm \
   -e PROJ_DIR=/usr \
-  -e PROJ_VERSION=9.7.1 \
+   -e PROJ_VERSION=$(grep -E '^ARG PROJ_VERSION=' Dockerfile | head -1 | cut -d= -f2) \
   -v "$PWD/dist:/dist" \
   pyproj-local \
   sh -c "uvx pip wheel --no-deps --no-binary pyproj --wheel-dir /dist pyproj==$PYPROJ_VERSION"

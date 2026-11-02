@@ -1,5 +1,5 @@
 ARG PROJ_VERSION=9.7.1
-ARG TRANSFORMATIONS_VERSION=2.0.0
+ARG TRANSFORMATIONS_VERSION=2.2.0
 ARG TRANSFORMATIONS_PRERELEASE_SUFFIX=
 # PROJ_VERSION pins the libproj line; TRANSFORMATIONS_VERSION is the NSGI config
 # semver (source of truth for both images). For local builds these defaults are
