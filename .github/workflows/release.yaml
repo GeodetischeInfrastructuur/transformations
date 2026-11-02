@@ -189,7 +189,7 @@ jobs:
             fi
           fi
 
-      - name: "Build custom pyproj wheels (standard and time-dependent)"
+      - name: "Build custom pyproj wheel (both databases)"
         env:
           OWNER_LC: ${{ needs.build-and-push-image.outputs.OWNER_LC }}
           PYPROJ_IMAGE_TAG: ${{ needs.build-and-push-image.outputs.PYPROJ_IMAGE_TAG }}
@@ -201,10 +201,7 @@ jobs:
         run: |
           chmod +x pyproj/build-wheel.sh
           IMAGE="ghcr.io/${OWNER_LC}/pyproj:${PYPROJ_IMAGE_TAG}-py${PYNODOT}"
-          # Build standard wheel (cp${PYNODOT})
           pyproj/build-wheel.sh "$IMAGE" "$PYPROJ_VERSION" "$TRANSFORMATIONS_VERSION" "$PROJ_VERSION" "../dist"
-          # Build time-dependent wheel (cp${PYNODOT}, build tag 1td)
-          pyproj/build-wheel.sh "$IMAGE" "$PYPROJ_VERSION" "$TRANSFORMATIONS_VERSION" "$PROJ_VERSION" "../dist" "--time-dependent"
 
       - name: "Smoke test: validate transformations (Python ${{ matrix.python }})"
         env:
@@ -220,12 +217,12 @@ jobs:
         run: |
           echo "Wheels in dist/"
           ls -lh dist/*.whl
-          WHEEL_COUNT=$(ls -1 dist/*.whl 2>/dev/null | wc -l)
-          if [[ "$WHEEL_COUNT" -lt 2 ]]; then
-            echo "ERROR: Expected 2 wheels (standard + time-dependent), found $WHEEL_COUNT"
+          WHEEL_COUNT=$(find dist -maxdepth 1 -type f -name '*.whl' | wc -l)
+          if [[ "$WHEEL_COUNT" -ne 1 ]]; then
+            echo "ERROR: Expected 1 combined wheel, found $WHEEL_COUNT"
             exit 1
           fi
-          echo "✓ Both wheels created successfully for Python ${{ matrix.python }}"
+          echo "✓ Combined wheel created successfully for Python ${{ matrix.python }}"
 
       - name: "Upload pyproj wheels"
         env:

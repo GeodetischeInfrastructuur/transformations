@@ -24,7 +24,7 @@ The Docker image (`ghcr.io/geodetischeinfrastructuur/pyproj:3.7.2-nsgi2.0.0`) pa
 
 ### Wheel Build (via Docker container)
 
-The wheel (`pyproj-3.7.2+nsgi2.0.0-cp312-cp312-linux_x86_64.whl`) is built inside the Docker image and then patched:
+The wheel (`pyproj-3.7.2+nsgi2.2.0-cp312-cp312-linux_x86_64.whl`) is built inside the Docker image and then patched:
 
 1. **Wheel compilation:**
    - Run `uvx pip wheel --no-deps --no-binary pyproj` inside the pyproj Docker image
@@ -34,11 +34,19 @@ The wheel (`pyproj-3.7.2+nsgi2.0.0-cp312-cp312-linux_x86_64.whl`) is built insid
    - Extract the wheel ZIP archive
    - **Bundle libproj.so.25:** Copy the PROJ 9.7.1 library into `pyproj.libs/` inside the wheel
    - **Patch RPATH:** Use `patchelf` to update all compiled `.so` files to search `pyproj.libs/` first, ensuring they load the bundled PROJ 9.7.1 at runtime
-   - **Inject NSGI data:** Copy NSGI proj databases (`proj.db`, `proj.time.dependent.transformations.db`) and grids into `pyproj/proj_dir/share/proj/` inside the wheel
-   - **PEP 440 versioning:** Append a local version from `3.7.2` to `3.7.2+nsgi2.0.0`; for an RC, the release suffix is included, e.g. `3.7.2+nsgi2.0.0rc1`, in METADATA and the wheel filename
+   - **Inject NSGI data:** Put the standard database and grids in `pyproj/proj_dir/share/proj/`; copy that directory to `pyproj/proj_dir/share/proj_time_dependent/` and replace its `proj.db` with the time-dependent database
+   - **PEP 440 versioning:** Append a local version from `3.7.2` to `3.7.2+nsgi2.2.0`; for an RC, include its suffix, e.g. `3.7.2+nsgi2.2.0rc1`, in METADATA and the wheel filename
    - **Recalculate RECORD:** Update SHA256 hashes for all files to match the wheel spec
 
-**Result:** A self-contained wheel that bundles pyproj, PROJ 9.7.1, NSGI databases, and grids. No system libproj or environment variables needed after install.
+**Result:** One self-contained wheel that bundles pyproj, PROJ, both NSGI data directories, and grids. The standard directory is active by default; applications can select `proj_time_dependent` with `pyproj.datadir.set_data_dir()` before creating transformers.
+
+```python
+from pathlib import Path
+import pyproj
+
+time_dependent_dir = Path(pyproj.__file__).parent / "proj_dir/share/proj_time_dependent"
+pyproj.datadir.set_data_dir(str(time_dependent_dir))
+```
 
 ### Key Dependency: libcurl Matching
 

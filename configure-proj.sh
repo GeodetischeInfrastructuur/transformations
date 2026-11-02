@@ -16,8 +16,8 @@ if [[ ! "$transformations_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     exit 1
 fi
 
-set_transformations_version() {
-    sqlite3 "$1" "INSERT OR REPLACE INTO metadata (key, value) VALUES ('NSGI.TRANSFORMATIONS.VERSION', '$transformations_version');"
+set_transformations_metadata() {
+    sqlite3 "$1" "INSERT OR REPLACE INTO metadata (key, value) VALUES ('NSGI.TRANSFORMATIONS.VERSION', '$transformations_version'), ('NSGI.TRANSFORMATIONS.TIME_DEPENDENT', '$2');"
 }
 
 # create backup file of proj.db for reverting
@@ -31,9 +31,9 @@ for sql_file in $( # note -t=seperator, -k=keydef, sorts on third item in [nl,ns
 done
 
 # Store the NSGI transformations semver in both database variants.
-set_transformations_version "$proj_dir/proj.db"
+set_transformations_metadata "$proj_dir/proj.db" "FALSE"
 cp "$proj_dir/proj.db" "$proj_dir/proj.time.dependent.transformations.db"
 echo "running sql: ${sql_dir}/time_dependent/nl_nsgi_00_time_dependent_transformations.sql on file: ${proj_dir}/proj.time.dependent.transformations.db"
 sqlite3 "$proj_dir/proj.time.dependent.transformations.db" <"$sql_dir/time_dependent/nl_nsgi_00_time_dependent_transformations.sql"
-set_transformations_version "$proj_dir/proj.time.dependent.transformations.db"
+set_transformations_metadata "$proj_dir/proj.time.dependent.transformations.db" "TRUE"
 
