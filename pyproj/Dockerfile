@@ -22,8 +22,8 @@ FROM ${TRANSFORMATION_IMAGE_SOURCE}transformations:${TRANSFORMATION_IMAGE_TAG} A
 # uv doesn't have a noble variant, so copy just the uv binary from the uv image
 FROM ghcr.io/astral-sh/uv:latest AS uv-source
 
-# use Ubuntu 24.04 (noble) to match osgeo/proj:9.7.1 base OS and glibc version
-FROM ubuntu:24.04
+# manylinux_2_28 (AlmaLinux 8, glibc 2.28): wheels built here run on glibc >= 2.28
+FROM quay.io/pypa/manylinux_2_28_x86_64
 
 ARG PYTHON_VERSION
 ARG PROJ_VERSION
@@ -31,26 +31,23 @@ WORKDIR /app
 
 COPY --from=uv-source /uv /uvx /usr/local/bin/
 
-# copy PROJ 9.7.1 libraries and headers so pyproj can be compiled from source against it
-COPY --from=proj-source /usr/lib/x86_64-linux-gnu/libproj.so.25 /usr/lib/x86_64-linux-gnu/
-COPY --from=proj-source /usr/lib/x86_64-linux-gnu/libproj.so.25.9.7.1 /usr/lib/x86_64-linux-gnu/
-COPY --from=proj-source /usr/lib/x86_64-linux-gnu/libproj.so /usr/lib/x86_64-linux-gnu/
-COPY --from=proj-source /usr/include/*.h /usr/include/
-COPY --from=proj-source /usr/include/proj/ /usr/include/proj/
+# build PROJ from source: libcurl-minimal keeps TLS via OpenSSL without LDAP/SSH/libpsl,
+# and libstdc++/libgcc are linked statically so libproj needs no GLIBCXX symbols from the host
+RUN yum -y swap libcurl libcurl-minimal \
+    && yum install -y curl sqlite sqlite-devel libtiff-devel libcurl-devel openssl-devel \
+    && yum clean all
+RUN curl -fsSL "https://download.osgeo.org/proj/proj-${PROJ_VERSION}.tar.gz" | tar -xz -C /tmp \
+    && cmake -S "/tmp/proj-${PROJ_VERSION}" -B /tmp/proj-build \
+       -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_INSTALL_LIBDIR=lib \
+       -DBUILD_TESTING=OFF -DBUILD_APPS=OFF -DENABLE_CURL=ON -DENABLE_TIFF=ON \
+       -DCMAKE_SHARED_LINKER_FLAGS="-static-libstdc++ -static-libgcc" \
+    && cmake --build /tmp/proj-build -j"$(nproc)" \
+    && cmake --install /tmp/proj-build \
+    && rm -rf /tmp/proj-* \
+    && echo /usr/local/lib > /etc/ld.so.conf.d/proj.conf && ldconfig
 
-# install gcc + patchelf (build tools) and all runtime dependencies of libproj
-# (sqlite3, tiff, curl+TLS chain). ca-certificates lets uv download the managed
-# CPython build over TLS. No system python is installed — the interpreter is
-# provided by uv (see UV_PYTHON), so one Dockerfile builds for any CPython 3.12-3.15.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    libc6-dev \
-    patchelf \
-    ca-certificates \
-    libsqlite3-0 \
-    libtiff6 \
-    libcurl3t64-gnutls \
-    && rm -rf /var/lib/apt/lists/*
+# No system python is installed: the interpreter is provided by uv (see UV_PYTHON),
+# so one Dockerfile builds for any CPython 3.12-3.15.
 
 # Pin the interpreter for every uv/uvx call (uv sync here and `uvx pip wheel` in
 # build-wheel.sh) so the compiled extension — and thus the wheel's ABI tag
@@ -61,7 +58,7 @@ RUN uv python install "${PYTHON_VERSION}"
 COPY pyproj/pyproject.toml pyproj/uv.lock ./
 COPY validation/ ./validation/
 # compile pyproj from source against the selected PROJ version
-RUN PROJ_DIR=/usr PROJ_VERSION="${PROJ_VERSION}" uv sync --no-binary-package pyproj
+RUN PROJ_DIR=/usr/local PROJ_VERSION="${PROJ_VERSION}" uv sync --no-binary-package pyproj
 
 # copy NSGI proj data into pyproj's internal data dir so pyproj picks it up automatically
 # (pyproj checks <package>/proj_dir/share/proj before any env var or system path)

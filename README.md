@@ -2,8 +2,8 @@
 
 [![GitHub license](https://img.shields.io/github/license/GeodetischeInfrastructuur/Transformations)](https://github.com/GeodetischeInfrastructuur/Transformations/blob/main/LICENSE)
 [![GitHub Release](https://img.shields.io/github/v/release/GeodetischeInfrastructuur/transformations)](https://github.com/GeodetischeInfrastructuur/transformations/releases)
-[![Transformations](https://img.shields.io/badge/Transformations-2.0.0--proj9.7.1-blue)](https://github.com/geodetischeinfrastructuur/transformations/pkgs/container/transformations)
-[![pyproj](https://img.shields.io/badge/pyproj-3.7.2--nsgi2.0.0-blue)](https://github.com/geodetischeinfrastructuur/transformations/pkgs/container/pyproj)
+[![Transformations](https://img.shields.io/badge/Transformations-2.2.0--proj9.7.1-blue)](https://github.com/geodetischeinfrastructuur/transformations/pkgs/container/transformations)
+[![pyproj](https://img.shields.io/badge/pyproj-3.7.2--nsgi2.2.0-blue)](https://github.com/geodetischeinfrastructuur/transformations/pkgs/container/pyproj)
 
 This repository contains a modified proj.db that implements the following
 transformations according to the recommendations of the NSGI (see image below).
@@ -61,7 +61,7 @@ includes the NSGI version and optional RC suffix.
 | ↳ `proj.db` (GitHub release asset) | `proj.db` | same as above |
 | ↳ `proj.time.dependent.transformations.db` (GitHub release asset) | `proj.time.dependent.transformations.db` | same as above |
 | `ghcr.io/geodetischeinfrastructuur/pyproj` | `3.7.2-nsgi2.2.0` | pyproj version + NSGI semver |
-| ↳ `pyproj` wheel (GitHub release asset) | `pyproj-3.7.2+nsgi2.2.0-cp312-cp312-linux_x86_64.whl` | same as above |
+| ↳ `pyproj` wheel (GitHub release asset) | `pyproj-3.7.2+nsgi2.2.0-cp312-cp312-manylinux_2_28_x86_64.whl` | same as above |
 
 The wheel encodes the NSGI semver as a PEP 440 **local version** (`3.7.2+nsgi2.2.0`): it keeps the upstream public version `3.7.2` (so `pyproj==3.7.2` still matches) while recording the NSGI generation. RC wheels include the RC marker in that local version, e.g. `3.7.2+nsgi2.2.0rc1`; the final wheel is `3.7.2+nsgi2.2.0`. One wheel is published per supported CPython (`cp312`–`cp315`), and each wheel includes both databases. The standard database is in pyproj's default data directory; the time-dependent database is in the sibling `proj_time_dependent` directory.
 
@@ -114,7 +114,7 @@ RUN apt-get install -y my-libproj-dependent-app
 
 ### 2. Install the published custom pyproj wheel with uv
 
-The release workflow publishes a custom `pyproj` wheel as a GitHub release asset. This is a pre-compiled wheel that bundles pyproj with NSGI transformations, custom PROJ databases, and grid files. Wheels are built for Linux `amd64` (`x86_64`) and CPython `3.12`–`3.15`.
+The release workflow publishes a custom `pyproj` wheel as a GitHub release asset. This is a pre-compiled wheel that bundles pyproj with NSGI transformations, custom PROJ databases, and grid files. Wheels are built for Linux `amd64` (`x86_64`, `manylinux_2_28`, so glibc 2.28 or newer) and CPython `3.12`–`3.15`.
 
 The wheel contains the Python package, compiled extension, both NSGI custom PROJ data directories, and the `nl_nsgi` grid files. It is self-contained — no extra grid downloads, environment variables, or system libproj dependencies are needed after install.
 
@@ -134,7 +134,7 @@ If you use `uv`, point your project at the published wheel with a direct URL dep
 ```toml
 [project]
 dependencies = [
-  "pyproj @ https://github.com/GeodetischeInfrastructuur/transformations/releases/download/2.2.0-proj9.7.1/pyproj-3.7.2+nsgi2.2.0-cp312-cp312-linux_x86_64.whl",
+  "pyproj @ https://github.com/GeodetischeInfrastructuur/transformations/releases/download/2.2.0-proj9.7.1/pyproj-3.7.2+nsgi2.2.0-cp312-cp312-manylinux_2_28_x86_64.whl",
 ]
 ```
 
@@ -147,7 +147,7 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-pyproj = { url = "https://github.com/GeodetischeInfrastructuur/transformations/releases/download/2.2.0-proj9.7.1/pyproj-3.7.2+nsgi2.2.0-cp312-cp312-linux_x86_64.whl" }
+pyproj = { url = "https://github.com/GeodetischeInfrastructuur/transformations/releases/download/2.2.0-proj9.7.1/pyproj-3.7.2+nsgi2.2.0-cp312-cp312-manylinux_2_28_x86_64.whl" }
 ```
 
 After updating `pyproject.toml`, run `uv lock` and `uv sync`.
@@ -209,7 +209,7 @@ docker run --rm transformations:2.2.0-proj9.7.1 \
 
 The [`pyproj/Dockerfile`](pyproj/Dockerfile) builds on top of the `transformations` image and compiles pyproj from source against PROJ 9.7.1. **The build must run from the repository root** (not from `pyproj/`) to access the validation scripts.
 
-> **libcurl note:** the pyproj image requires `libcurl3t64-gnutls` to match what `osgeo/proj:${PROJ_VERSION}` was built against. The Dockerfile handles this automatically; if you see an `ImportError: libcurl-gnutls.so.4: cannot open shared object file` at runtime, see [pyproj/README.md#troubleshooting](pyproj/README.md#troubleshooting).
+> **libcurl note:** PROJ is built from source in the pyproj image, so it does not need to match the libcurl of `osgeo/proj`. The image uses `libcurl-minimal` (TLS via OpenSSL); see [pyproj/README.md#key-dependency-libcurl](pyproj/README.md#key-dependency-libcurl).
 
 Build against a local `transformations` image (built in the previous step), reading versions from the root [`Dockerfile`](Dockerfile):
 
@@ -244,7 +244,7 @@ docker build . -f pyproj/Dockerfile \
 
 ### Build the pyproj wheel
 
-The [`pyproj/build-wheel.sh`](pyproj/build-wheel.sh) script wraps the wheel build and patching steps. It runs the pyproj image, compiles the raw wheel, then patches it to bundle `libproj.so.25`, inject both NSGI data directories, fix RPATHs, and apply the PEP 440 local-version (`+nsgi<version>`).
+The [`pyproj/build-wheel.sh`](pyproj/build-wheel.sh) script wraps the wheel build and patching steps. It runs the pyproj image, compiles the raw wheel, then injects both NSGI data directories and the PEP 440 local version (`+nsgi<version>`), and repairs the wheel with `auditwheel` (manylinux_2_28 tag, bundles libproj and its dependencies).
 
 ```bash
 # Prerequisites: pyproj image built locally (see previous section)
@@ -287,7 +287,7 @@ To verify that NSGI transformations are correctly installed via the published wh
 
 ```bash
 # Fetch the latest wheel URL from GitHub releases (or pin a specific version)
-WHEEL_URL=$(curl -s https://api.github.com/repos/geodetischeinfrastructuur/transformations/releases | jq -r '.[0].assets[] | select(.name | endswith("cp312-cp312-linux_x86_64.whl")) | .browser_download_url')
+WHEEL_URL=$(curl -s https://api.github.com/repos/geodetischeinfrastructuur/transformations/releases | jq -r '.[0].assets[] | select(.name | endswith("cp312-cp312-manylinux_2_28_x86_64.whl")) | .browser_download_url')
 PROJ_NETWORK=ON uv run --python 3.12 --with "pyproj @ $WHEEL_URL" python -c '
 from pyproj import transformer
 etrf = transformer.TransformerGroup("EPSG:7931", "EPSG:7415")
@@ -323,7 +323,7 @@ Download the test datasets, transform them with this tool, and upload the result
 )
 
 # Fetch the latest wheel URL from GitHub releases
-WHEEL_URL=$(curl -s https://api.github.com/repos/geodetischeinfrastructuur/transformations/releases | jq -r '.[0].assets[] | select(.name | endswith("cp312-cp312-linux_x86_64.whl")) | .browser_download_url')
+WHEEL_URL=$(curl -s https://api.github.com/repos/geodetischeinfrastructuur/transformations/releases | jq -r '.[0].assets[] | select(.name | endswith("cp312-cp312-manylinux_2_28_x86_64.whl")) | .browser_download_url')
 uv run --with "pyproj @ $WHEEL_URL" \
   python validation/transform_csv.py validation/data/002_ETRS89.txt validation/data/002_ETRS89_transformed.txt
 uv run --with "pyproj @ $WHEEL_URL" \
@@ -338,7 +338,7 @@ Validate transformation accuracy against reference coordinates. The file `Z001_E
 
 ```bash
 # Fetch the latest wheel URL from GitHub releases
-WHEEL_URL=$(curl -s https://api.github.com/repos/geodetischeinfrastructuur/transformations/releases | jq -r '.[0].assets[] | select(.name | endswith("cp312-cp312-linux_x86_64.whl")) | .browser_download_url')
+WHEEL_URL=$(curl -s https://api.github.com/repos/geodetischeinfrastructuur/transformations/releases | jq -r '.[0].assets[] | select(.name | endswith("cp312-cp312-manylinux_2_28_x86_64.whl")) | .browser_download_url')
 uv run --with "pyproj @ $WHEEL_URL" \
   python validation/validate.py validation/data/Z001_ETRS89andRDNAP.txt /tmp/Z001_ETRS89andRDNAP_transformed.csv
 ```
