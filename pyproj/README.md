@@ -6,17 +6,17 @@ This directory contains the Docker configuration and build scripts for the `pypr
 
 ### Docker Image Build (`docker build . -f pyproj/Dockerfile`)
 
-The Docker image (`ghcr.io/geodetischeinfrastructuur/pyproj:3.7.2-nsgi2.0.0`) packages pyproj with NSGI customizations into a ready-to-use container:
+The Docker image (`ghcr.io/geodetischeinfrastructuur/pyproj:3.7.2-nsgi2.2.0`) packages pyproj with NSGI customizations into a ready-to-use container:
 
 1. **Base Stages (multi-stage build):**
-   - `proj-source` — Extracts PROJ 9.7.1 libraries, headers, and nl_nsgi grids from `osgeo/proj:9.7.1`
+   - `proj-source` — Downloads the nl_nsgi grids with `projsync` from `osgeo/proj:9.7.1`
    - `transformations` — Pulls the base transformations image containing NSGI proj.db
    - `uv-source` — Extracts the `uv` package manager binary
 
-2. **Final Stage (Ubuntu 24.04):**
-   - Install build tools (gcc, libc development headers, patchelf) and runtime dependencies (`libsqlite3`, `libtiff6`, `libcurl3t64-gnutls`); the CPython interpreter (3.12–3.15, selected by `PYTHON_VERSION`) is provided by uv (`UV_PYTHON`)
-   - Copy PROJ 9.7.1 libraries and headers from `proj-source`
-   - Run `uv sync --no-binary-package pyproj` to compile pyproj from source against PROJ 9.7.1
+2. **Final Stage (`quay.io/pypa/manylinux_2_28_x86_64`, AlmaLinux 8, glibc 2.28):**
+   - Build PROJ 9.7.1 from source with CMake into `/usr/local`, with curl and TIFF support and libstdc++/libgcc linked statically
+   - Swap the base image's full `libcurl` for `libcurl-minimal` (TLS via OpenSSL) and install `libcurl-devel` for headers; the CPython interpreter (3.12–3.15, selected by `PYTHON_VERSION`) is provided by uv (`UV_PYTHON`)
+   - Run `uv sync --no-binary-package pyproj` to compile pyproj from source against that PROJ build
    - Copy NSGI proj databases and grids into pyproj's internal data directory
    - Set `PATH` to expose the venv's binaries
 
@@ -24,19 +24,18 @@ The Docker image (`ghcr.io/geodetischeinfrastructuur/pyproj:3.7.2-nsgi2.0.0`) pa
 
 ### Wheel Build (via Docker container)
 
-The wheel (`pyproj-3.7.2+nsgi2.2.0-cp312-cp312-linux_x86_64.whl`) is built inside the Docker image and then patched:
+The wheel (`pyproj-3.7.2+nsgi2.2.0-cp312-cp312-manylinux_2_28_x86_64.whl`) is built inside the Docker image and then repaired:
 
 1. **Wheel compilation:**
    - Run `uvx pip wheel --no-deps --no-binary pyproj` inside the pyproj Docker image
    - Outputs a raw `.whl` file with pyproj C extensions compiled against PROJ 9.7.1
 
-2. **Wheel patching (post-processing):**
+2. **Wheel patching and repair (post-processing):**
    - Extract the wheel ZIP archive
-   - **Bundle libproj.so.25:** Copy the PROJ 9.7.1 library into `pyproj.libs/` inside the wheel
-   - **Patch RPATH:** Use `patchelf` to update all compiled `.so` files to search `pyproj.libs/` first, ensuring they load the bundled PROJ 9.7.1 at runtime
    - **Inject NSGI data:** Put the standard database and grids in `pyproj/proj_dir/share/proj/`; copy that directory to `pyproj/proj_dir/share/proj_time_dependent/` and replace its `proj.db` with the time-dependent database
-   - **PEP 440 versioning:** Append a local version from `3.7.2` to `3.7.2+nsgi2.2.0`; for an RC, include its suffix, e.g. `3.7.2+nsgi2.2.0rc1`, in METADATA and the wheel filename
+   - **PEP 440 versioning:** Append a local version from `3.7.2` to `3.7.2+nsgi2.2.0`; for an RC, include its suffix, e.g. `3.7.2+nsgi2.2.0rc1`, in METADATA, the `.dist-info` directory, and the wheel filename
    - **Recalculate RECORD:** Update SHA256 hashes for all files to match the wheel spec
+   - **Repair with auditwheel:** `auditwheel repair --plat manylinux_2_28_x86_64` bundles libproj and its dependencies (18 libraries, including libcurl, OpenSSL, libsqlite3, and libtiff) into `pyproj.libs/`, sets RPATHs, and tags the wheel `manylinux_2_28_x86_64`. Libraries on auditwheel's manylinux policy list, such as glibc, are not bundled
 
 **Result:** One self-contained wheel that bundles pyproj, PROJ, both NSGI data directories, and grids. The standard directory is active by default; applications can select `proj_time_dependent` with `pyproj.datadir.set_data_dir()` before creating transformers.
 
@@ -48,39 +47,37 @@ time_dependent_dir = Path(pyproj.__file__).parent / "proj_dir/share/proj_time_de
 pyproj.datadir.set_data_dir(str(time_dependent_dir))
 ```
 
-### Key Dependency: libcurl Matching
+### Key Dependency: libcurl
 
-Both builds must use `libcurl3t64-gnutls` in the Dockerfile. This matches what `osgeo/proj:9.7.1` was built against. If you change the libcurl variant, the prebuilt PROJ binary's soname requirement won't match, causing runtime errors.
+PROJ is built from source in the pyproj image, so it is not tied to the libcurl that `osgeo/proj` was built against. The base image ships the full `libcurl` with LDAP, SSH, and libpsl support. The Dockerfile replaces it with `libcurl-minimal`, which keeps TLS through OpenSSL; `libcurl-devel` supplies the headers. This removes libssh, libldap, libsasl2, libpsl, libidn2, and brotli from the bundled set.
 
-**Verify PROJ's libcurl dependency:**
+**Verify the libcurl build in the image:**
 ```bash
-docker run --rm osgeo/proj:9.7.1 ldd /usr/lib/x86_64-linux-gnu/libproj.so.25 | grep curl
-# Output: libcurl-gnutls.so.4 => /lib/x86_64-linux-gnu/libcurl-gnutls.so.4
+docker run --rm pyproj:3.7.2-nsgi2.2.0 sh -c 'rpm -q libcurl-minimal; ldd /usr/lib64/libcurl.so.4 | grep -E "ssl|ldap|ssh"'
+# Expected: libssl.so.1.1 is listed; no libldap or libssh
 ```
+
+`curl-config --features` still lists LDAP and SSH, because it reads build metadata from `libcurl-devel`. The shipped library does not link them.
 
 ## Troubleshooting
 
-### libcurl runtime dependency mismatch
+### libcurl without TLS support
 
-If the built wheel fails with `ImportError: libcurl-gnutls.so.4: cannot open shared object file: No such file or directory`, the build environment's libcurl version doesn't match what PROJ was compiled against.
-
-**Cause:** `osgeo/proj:${PROJ_VERSION}` is built on Ubuntu 24.04 with `libcurl-gnutls.so.4`. If you changed the Dockerfile to use a different libcurl variant (e.g., `libcurl4`), the prebuilt PROJ binary still links against the original soname.
-
-**Fix:** Verify which libcurl soname PROJ requires:
+If PROJ cannot fetch grids over HTTPS, check that the image uses `libcurl-minimal` and that it is linked against OpenSSL:
 
 ```bash
-docker run --rm osgeo/proj:9.7.1 ldd /usr/lib/x86_64-linux-gnu/libproj.so.25 | grep curl
+docker run --rm pyproj:3.7.2-nsgi2.2.0 sh -c 'rpm -q libcurl libcurl-minimal; ldd /usr/lib64/libcurl.so.4 | grep ssl'
 ```
 
-Then install the **exact matching variant** in [Dockerfile](Dockerfile). Do not change the libcurl variant—match what the prebuilt PROJ binary expects.
+`rpm -q libcurl` should report that the package is not installed. Do not install the full `libcurl` next to `libcurl-minimal`; the two conflict. The Dockerfile's `yum -y swap` removes the full library.
 
 ### Version mismatch between Dockerfiles
 
 If the pyproj image build fails with version mismatches, ensure `PROJ_VERSION` and `TRANSFORMATIONS_VERSION` in the root [../Dockerfile](../Dockerfile) match what's passed to [Dockerfile](Dockerfile). Run the build commands from the repository root, not from subdirectories.
 
-### RPATH patch failures
+### auditwheel repair failures
 
-If `patchelf` fails during wheel patching with "ELF file not found", the pyproj wheel may not have compiled successfully. Check the Docker build output for compilation errors. Ensure `uv sync` completed without errors and that all `.so` files were created in the pyproj package directory.
+If `auditwheel repair` fails, or `auditwheel show` reports a tag other than `manylinux_2_28_x86_64`, a bundled library needs a newer glibc or a symbol version above 2.28. Check the Docker build output for compilation errors, and confirm `uv sync` produced the `.so` files in the pyproj package directory.
 
 ## Building Locally
 
@@ -119,7 +116,7 @@ ls -lh dist/pyproj*.whl
 
 **Note:** The `build-wheel.sh` script requires:
 - Docker (with the pyproj image already built or accessible)
-- `patchelf` available inside the Docker container (it is in the pyproj image)
+- `uvx` available inside the pyproj image (it runs `auditwheel` for the repair step)
 - Write access to the output directory
 
 For development/testing, you can also build the wheel directly without patching:
@@ -127,7 +124,7 @@ For development/testing, you can also build the wheel directly without patching:
 ```bash
 # Just build raw wheel (without NSGI data or PROJ bundling)
 docker run --rm \
-  -e PROJ_DIR=/usr \
+  -e PROJ_DIR=/usr/local \
    -e PROJ_VERSION=$(grep -E '^ARG PROJ_VERSION=' Dockerfile | head -1 | cut -d= -f2) \
   -v "$PWD/dist:/dist" \
   pyproj-local \

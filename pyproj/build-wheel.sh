@@ -54,17 +54,11 @@ echo ""
 # Step 1: Build raw wheel
 echo "Step 1/2: Building raw pyproj wheel from source..."
 
-# Clean up any previous raw wheels to ensure a fresh build
-rm -f "$ABS_OUTPUT_DIR"/pyproj-*.dist-info 2>/dev/null || true
-for whl in "$ABS_OUTPUT_DIR"/pyproj-[0-9]*.whl; do
-  if [[ -f "$whl" ]] && [[ "$whl" != *"+nsgi"* ]]; then
-    echo "Cleaning up previous raw wheel: $(basename "$whl")"
-    rm -f "$whl"
-  fi
-done
+# Remove previous wheels so the repair step below sees only this build
+rm -f "$ABS_OUTPUT_DIR"/pyproj-*.whl 2>/dev/null || true
 
 docker run --rm \
-  -e PROJ_DIR=/usr \
+  -e PROJ_DIR=/usr/local \
   -e PROJ_VERSION="$PROJ_VERSION" \
   -v "$ABS_OUTPUT_DIR:/dist" \
   "$PYPROJ_IMAGE_TAG" \
@@ -90,9 +84,7 @@ echo "Step 2/2: Patching wheel with NSGI data and PROJ bundling..."
 
 cat > /tmp/inject_proj_data.py << 'PYEOF'
 # Patches a pyproj wheel built from PyPI source with three changes:
-#   1. Bundles libproj.so.25 into pyproj.libs/ and patches the RPATH of all
-#      extension .so files so the bundled PROJ is loaded at runtime,
-#      regardless of what libproj is installed on the host.
+#   1. Leaves bundling to auditwheel repair, which runs after this script.
 #   2. Injects both NSGI data directories: the default database at
 #      pyproj/proj_dir/share/proj/ and the time-dependent database at
 #      pyproj/proj_dir/share/proj_time_dependent/.
@@ -102,7 +94,7 @@ cat > /tmp/inject_proj_data.py << 'PYEOF'
 #      and the wheel filename, recording the NSGI transformations semver while
 #      keeping the upstream 3.7.2 public version (so `pyproj==3.7.2` pins still
 #      match). The `rcN` label distinguishes prerelease wheels from final wheels.
-import base64, hashlib, os, re, shutil, subprocess, tempfile, zipfile
+import base64, hashlib, os, re, shutil, tempfile, zipfile
 from pathlib import Path
 
 # Find the raw wheel (without a +nsgi local version in the filename).
@@ -154,16 +146,8 @@ with tempfile.TemporaryDirectory() as tmp:
     shutil.copytree(dest, td_dest)
     shutil.copy2(time_dependent_db, td_dest / "proj.db")
 
-    # Bundle libproj.so.25 (PROJ 9.7.1) so the extension loads the correct version
-    # at runtime regardless of what libproj is installed on the host system.
-    # Patch RPATH of every extension .so to look in pyproj.libs/ before system paths.
-    libs_dir = tmp / "pyproj.libs"
-    libs_dir.mkdir(exist_ok=True)
-    libproj = Path("/usr/lib/x86_64-linux-gnu/libproj.so.25")
-    if libproj.exists():
-        shutil.copy2(libproj, libs_dir / "libproj.so.25")
-        for so in sorted((tmp / "pyproj").glob("*.so")):
-            subprocess.check_call(["patchelf", "--add-rpath", "$ORIGIN/../pyproj.libs", str(so)])
+    
+
 
     dist_info = next(tmp.glob("pyproj-*.dist-info"))
 
@@ -235,7 +219,7 @@ docker run --rm \
   -v "$ABS_OUTPUT_DIR:/dist" \
   -v "/tmp/inject_proj_data.py:/inject_proj_data.py:ro" \
   "$PYPROJ_IMAGE_TAG" \
-  python3 /inject_proj_data.py || {
+  sh -c 'python3 /inject_proj_data.py && uvx auditwheel repair --plat manylinux_2_28_x86_64 -w /dist/repaired /dist/pyproj-*+nsgi*.whl && rm -f /dist/pyproj-*+nsgi*.whl && mv /dist/repaired/*.whl /dist/ && rmdir /dist/repaired' || {
   echo "ERROR: Python injection script failed!"
   echo "Wheels in $ABS_OUTPUT_DIR:"
   ls -lh "$ABS_OUTPUT_DIR"/pyproj*.whl 2>/dev/null || echo "No wheels found"

@@ -3,7 +3,7 @@
 # determine the published wheel's name or version — the wheel is built from the
 # upstream `pyproj` PyPI source and then patched by build-wheel.sh to bundle
 # libproj and NSGI data. The wheel keeps the upstream package name `pyproj`
-# (filename: pyproj-<PYPROJ_VERSION>+nsgi<TRANSFORMATIONS_VERSION>-cp312-cp312-linux_x86_64.whl).
+# (filename: pyproj-<PYPROJ_VERSION>+nsgi<TRANSFORMATIONS_VERSION>-cp312-cp312-manylinux_2_28_x86_64.whl).
 [project]
 name = "transformations"
 # Static version — this file describes the build env, not a released artifact,
