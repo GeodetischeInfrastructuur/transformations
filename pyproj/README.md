@@ -88,18 +88,43 @@ An import error such as `ImportError: libtiff.so.6: cannot open shared object fi
 
 Building a distributable wheel requires two steps: first prepare the Docker build image, then run `build-wheel.sh` using that image. Run all commands below from the repository root. See the main [../README.md](../README.md#building-images-locally) for the prerequisite transformations image build commands.
 
+### Optimization: separate PROJ base image
+
+In CI and for multiple Python versions, build PROJ once using `Dockerfile.proj-base`, then reuse that image for all Python ABIs (3.12, 3.13, 3.14, 3.15). This avoids recompiling PROJ (5–10 min) for each wheel, roughly halving total build time when building all four wheels in parallel.
+
 ### Step 1: Prepare the Docker build image
 
-This example uses a locally built transformations image (`TRANSFORMATION_IMAGE_SOURCE=`). To use the published transformations image instead, omit that build argument.
+Building the pyproj image requires two sub-steps: first build the PROJ base image (which compiles the PROJ library once), then build the main pyproj image reusing that base. This example uses a locally built transformations image (`TRANSFORMATION_IMAGE_SOURCE=`). To use the published transformations image instead, omit that build argument.
+
+**Step 1a: Build the PROJ base image**
+
+```bash
+# Extract PROJ_VERSION from the root Dockerfile
+PROJ_VERSION=$(grep -E '^ARG PROJ_VERSION=' Dockerfile | head -1 | cut -d= -f2)
+
+# Build the PROJ base image (builds PROJ library once, cached by version)
+docker build . -f pyproj/Dockerfile.proj-base \
+  --build-arg PROJ_VERSION="${PROJ_VERSION}" \
+  -t pyproj-proj-base:"${PROJ_VERSION}"
+```
+
+**Step 1b: Build the pyproj image using the PROJ base**
+
 The pyproj Dockerfile intentionally requires `PROJ_VERSION` and `TRANSFORMATIONS_VERSION` from the caller rather than duplicating their defaults. It skips Docker's `InvalidDefaultArgInFrom` check for those required arguments; the values passed below still need to refer to valid images.
 
 ```bash
-# Build Docker image
+# Extract versions
+PYPROJ_VERSION=$(grep -E '^ARG PYPROJ_VERSION=' pyproj/Dockerfile | head -1 | cut -d= -f2)
+TRANSFORMATIONS_VERSION=$(grep -E '^ARG TRANSFORMATIONS_VERSION=' Dockerfile | head -1 | cut -d= -f2)
+PROJ_VERSION=$(grep -E '^ARG PROJ_VERSION=' Dockerfile | head -1 | cut -d= -f2)
+
+# Build pyproj image, reusing the PROJ base to avoid recompiling PROJ
 docker build . -f pyproj/Dockerfile \
   --pull=false \
+  --build-arg PROJ_BASE_IMAGE=pyproj-proj-base:"${PROJ_VERSION}" \
   --build-arg TRANSFORMATION_IMAGE_SOURCE= \
-   --build-arg PROJ_VERSION=$(grep -E '^ARG PROJ_VERSION=' Dockerfile | head -1 | cut -d= -f2) \
-   --build-arg TRANSFORMATIONS_VERSION=$(grep -E '^ARG TRANSFORMATIONS_VERSION=' Dockerfile | head -1 | cut -d= -f2) \
+  --build-arg PROJ_VERSION="${PROJ_VERSION}" \
+  --build-arg TRANSFORMATIONS_VERSION="${TRANSFORMATIONS_VERSION}" \
   -t pyproj-local
 
 # Test inside container
@@ -108,15 +133,15 @@ docker run --rm pyproj-local python -c "from pyproj import Transformer; print(Tr
 
 ### Step 2: Build the distributable wheel
 
-Use the image from step 1 with `build-wheel.sh`. This exports the repaired wheel to the host; building the Docker image alone does not:
+Use the pyproj image from step 1b with `build-wheel.sh`. This exports the repaired wheel to the host; building the Docker image alone does not:
 
 ```bash
-# Extract versions from Dockerfiles
+# Extract versions (same as step 1)
 PYPROJ_VERSION=$(grep -E '^ARG PYPROJ_VERSION=' pyproj/Dockerfile | head -1 | cut -d= -f2)
 TRANSFORMATIONS_VERSION=$(grep -E '^ARG TRANSFORMATIONS_VERSION=' Dockerfile | head -1 | cut -d= -f2)
 PROJ_VERSION=$(grep -E '^ARG PROJ_VERSION=' Dockerfile | head -1 | cut -d= -f2)
 
-# Build wheel using the local pyproj Docker image
+# Build wheel using the local pyproj Docker image (built in step 1b)
 bash pyproj/build-wheel.sh pyproj-local "$PYPROJ_VERSION" "$TRANSFORMATIONS_VERSION" "$PROJ_VERSION" ../dist
 
 # Wheel is now in ./dist/

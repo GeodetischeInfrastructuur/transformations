@@ -11,6 +11,7 @@ ARG TRANSFORMATIONS_VERSION
 ARG TRANSFORMATIONS_PRERELEASE_SUFFIX=
 ARG TRANSFORMATION_IMAGE_SOURCE=ghcr.io/geodetischeinfrastructuur/
 ARG TRANSFORMATION_IMAGE_TAG=${TRANSFORMATIONS_VERSION}${TRANSFORMATIONS_PRERELEASE_SUFFIX}-proj${PROJ_VERSION}
+ARG PROJ_BASE_IMAGE=ghcr.io/geodetischeinfrastructuur/pyproj-proj-base:${PROJ_VERSION}
 # PYPROJ_VERSION is managed here (source of truth for the Python wrapper).
 # PROJ_VERSION and TRANSFORMATIONS_VERSION must be supplied by the build caller; TRANSFORMATIONS_VERSION is sourced from the root Dockerfile.
 # this image is versioned by pyproj: PYPROJ_VERSION-nsgiTRANSFORMATIONS_VERSION (e.g. 3.7.2-nsgi2.0.0)
@@ -24,29 +25,14 @@ FROM ${TRANSFORMATION_IMAGE_SOURCE}transformations:${TRANSFORMATION_IMAGE_TAG} A
 # uv doesn't have a noble variant, so copy just the uv binary from the uv image
 FROM ghcr.io/astral-sh/uv:latest AS uv-source
 
-# manylinux_2_28 (AlmaLinux 8, glibc 2.28): wheels built here run on glibc >= 2.28
-FROM quay.io/pypa/manylinux_2_28_x86_64
+# Reuse pre-built PROJ library to speed up parallel builds: each Python ABI
+# builds on this base, avoiding PROJ recompilation for 3.12, 3.13, 3.14, 3.15.
+FROM ${PROJ_BASE_IMAGE}
 
 ARG PYTHON_VERSION
-ARG PROJ_VERSION
 WORKDIR /app
 
 COPY --from=uv-source /uv /uvx /usr/local/bin/
-
-# build PROJ from source: libcurl-minimal keeps TLS via OpenSSL without LDAP/SSH/libpsl,
-# and libstdc++/libgcc are linked statically so libproj needs no GLIBCXX symbols from the host
-RUN yum -y swap libcurl libcurl-minimal \
-    && yum install -y curl sqlite sqlite-devel libtiff-devel libcurl-devel openssl-devel \
-    && yum clean all
-RUN curl -fsSL "https://download.osgeo.org/proj/proj-${PROJ_VERSION}.tar.gz" | tar -xz -C /tmp \
-    && cmake -S "/tmp/proj-${PROJ_VERSION}" -B /tmp/proj-build \
-       -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_INSTALL_LIBDIR=lib \
-       -DBUILD_TESTING=OFF -DBUILD_APPS=OFF -DENABLE_CURL=ON -DENABLE_TIFF=ON \
-       -DCMAKE_SHARED_LINKER_FLAGS="-static-libstdc++ -static-libgcc" \
-    && cmake --build /tmp/proj-build -j"$(nproc)" \
-    && cmake --install /tmp/proj-build \
-    && rm -rf /tmp/proj-* \
-    && echo /usr/local/lib > /etc/ld.so.conf.d/proj.conf && ldconfig
 
 # No system python is installed: the interpreter is provided by uv (see UV_PYTHON),
 # so one Dockerfile builds for any CPython 3.12-3.15.
