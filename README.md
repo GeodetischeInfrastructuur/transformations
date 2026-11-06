@@ -244,7 +244,7 @@ docker build . -f pyproj/Dockerfile \
 
 ### Build the pyproj wheel
 
-The [`pyproj/build-wheel.sh`](pyproj/build-wheel.sh) script wraps the wheel build and patching steps. It runs the pyproj image, compiles the raw wheel, then injects both NSGI data directories and the PEP 440 local version (`+nsgi<version>`), and repairs the wheel with `auditwheel` (manylinux_2_28 tag, bundles libproj and its dependencies).
+Use [`pyproj/build-wheel.sh`](pyproj/build-wheel.sh) as the single supported entry point for building the distributable wheel. The Dockerfile prepares the build image but does not export the final wheel. The script compiles the raw wheel, injects both NSGI data directories and the PEP 440 local version (`+nsgi<version>`), then runs `uvx --from auditwheel auditwheel repair` for `manylinux_2_28_x86_64`. Repair bundles PROJ and its required non-policy shared libraries, including TIFF, and patches library references and search paths. Publish only the final repaired wheel, not a raw `pip wheel` output.
 
 ```bash
 # Prerequisites: pyproj image built locally (see previous section)
@@ -256,11 +256,14 @@ ls -lh dist/pyproj*.whl
 ```
 
 Arguments: `<image-tag> <pyproj-version> <transformations-version> <proj-version> [output-dir]`.
+Versions must match the build image; its `PYTHON_VERSION` build argument determines the wheel's Python ABI. Relative output paths are resolved against `pyproj/`, so `../dist` means the repository-root `dist/` directory. **The script deletes existing `pyproj-*.whl` files in the output directory**; use separate directories to retain wheels for multiple Python versions.
+
 For a release candidate, set `TRANSFORMATIONS_PRERELEASE_SUFFIX=-rc1` when
 running the script; the wheel's local version will end in `rc1` (for example,
 `pyproj-3.7.2+nsgi2.2.0rc1-cp312-...whl`).
 
 For the technical details of wheel patching (RPATH fixes, RECORD hashing, NSGI data injection), see [pyproj/README.md](pyproj/README.md#wheel-build-via-docker-container).
+Before publishing, [test the repaired wheel in a clean runtime container](pyproj/README.md#step-3-test-the-repaired-wheel-in-a-clean-runtime), not only the build image: installed build dependencies can hide missing bundled libraries.
 
 
 ## Validation

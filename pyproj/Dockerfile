@@ -1,8 +1,10 @@
+# PROJ_VERSION and TRANSFORMATIONS_VERSION are deliberately required build args;
+# their source of truth is the root Dockerfile, not duplicated defaults here.
 # Build context: Must be run from repository root with:
 #   docker build . -f pyproj/Dockerfile [--build-arg ...]
 # This allows COPY to access both pyproj/ and validation/ directories.
 #
-ARG PYTHON_VERSION=3.12
+ARG PYTHON_VERSION=3.15
 ARG PYPROJ_VERSION=3.7.2
 ARG PROJ_VERSION
 ARG TRANSFORMATIONS_VERSION
