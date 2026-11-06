@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   build-and-push-image:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04 
     outputs:
       REPO_LC: ${{ steps.lowercaserepo.outputs.REPO_LC }}
       OWNER_LC: ${{ steps.lowercaserepo.outputs.OWNER_LC }}
@@ -31,10 +31,10 @@ jobs:
           echo "OWNER_LC=${GH_OWNER,,}" >> $GITHUB_OUTPUT
 
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: "Login to GitHub Container Registry"
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{github.actor}}
@@ -138,16 +138,16 @@ jobs:
           gh release upload ${{ github.event.release.tag_name }} proj.time.dependent.transformations.db
 
   build-proj-base:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04 
     outputs:
       PROJ_VERSION: ${{ steps.versions.outputs.PROJ_VERSION }}
       OWNER_LC: ${{ steps.lowercaserepo.outputs.OWNER_LC }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: "Login to GitHub Container Registry"
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{github.actor}}
@@ -176,7 +176,7 @@ jobs:
 
   build-wheels:
     needs: [build-and-push-image, build-proj-base]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04 
     strategy:
       # Don't cancel other Python legs if one version fails to build.
       fail-fast: false
@@ -184,10 +184,10 @@ jobs:
         python: ["3.12", "3.13", "3.14", "3.15"]
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: "Login to GitHub Container Registry"
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{github.actor}}
