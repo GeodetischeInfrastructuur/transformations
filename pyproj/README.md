@@ -155,11 +155,13 @@ ls -lh dist/pyproj*.whl
 - `patchelf` available inside the pyproj image (required by `auditwheel repair`)
 - Write access to the output directory
 
-Arguments are `<image-tag> <pyproj-version> <transformations-version> <proj-version> [output-dir]`. Versions must match the build image. The Python ABI is selected when building the image with `--build-arg PYTHON_VERSION=...`, not by the script arguments.
+Arguments are `<image-tag> <pyproj-version> <transformations-version> <proj-version> [output-dir] [build-suffix]`. Versions must match the build image. The Python ABI is selected when building the image with `--build-arg PYTHON_VERSION=...`, not by the script arguments.
 
 Relative output paths are resolved against `pyproj/`, so the default `../dist` is the repository-root `dist/` directory. **The script deletes existing `pyproj-*.whl` files from that output directory before building.** Use separate output directories to retain wheels for multiple Python versions.
 
 For a release candidate, use a matching prerelease build image and set `TRANSFORMATIONS_PRERELEASE_SUFFIX=-rc1` when running the script. The resulting local version ends in `rc1`, for example `3.7.2+nsgi2.2.0rc1`.
+
+For packaging-only rebuilds (e.g., fixing wheel metadata without changing PROJ or NSGI data), pass an optional `build-suffix` argument (e.g., `.build.1`). This appends the suffix to the wheel version, e.g., `3.7.2+nsgi2.2.0.build.1`, making the rebuild explicit while preserving the original NSGI version. When no suffix is provided, wheels are versioned as usual.
 
 Do not use a raw `pip wheel` output as the distributable artifact: it lacks the script's NSGI data injection, version changes, and native-library repair.
 

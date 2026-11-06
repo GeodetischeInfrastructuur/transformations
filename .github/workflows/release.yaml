@@ -241,7 +241,14 @@ jobs:
         run: |
           chmod +x pyproj/build-wheel.sh
           IMAGE="ghcr.io/${OWNER_LC}/pyproj:${PYPROJ_IMAGE_TAG}-py${PYNODOT}"
-          pyproj/build-wheel.sh "$IMAGE" "$PYPROJ_VERSION" "$TRANSFORMATIONS_VERSION" "$PROJ_VERSION" "../dist"
+          # Extract optional .build.X suffix from release tag (e.g., 2.2.0-proj9.7.1.build.1)
+          RELEASE_TAG="${{ github.event.release.tag_name }}"
+          if [[ "$RELEASE_TAG" =~ (\.[Bb][Uu][Ii][Ll][Dd]\.[0-9]+)$ ]]; then
+            BUILD_SUFFIX="${BASH_REMATCH[1]}"
+          else
+            BUILD_SUFFIX=""
+          fi
+          pyproj/build-wheel.sh "$IMAGE" "$PYPROJ_VERSION" "$TRANSFORMATIONS_VERSION" "$PROJ_VERSION" "../dist" "$BUILD_SUFFIX"
 
       - name: "Smoke test: validate transformations (Python ${{ matrix.python }})"
         env:
