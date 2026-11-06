@@ -50,20 +50,22 @@ repository.
 ## Versioning
 
 The GitHub release and `transformations` image tag lead with the NSGI
-transformations semver: `{TRANSFORMATIONS_VERSION}[-rcN]-proj{PROJ_VERSION}`.
+transformations semver: `{TRANSFORMATIONS_VERSION}[-rcN][-buildN]-proj{PROJ_VERSION}`.
 For example, `2.2.0-rc1-proj9.7.1` is an RC and `2.2.0-proj9.7.1` is its final
-release. The `pyproj` image tag remains based on the upstream pyproj version and
-includes the NSGI version and optional RC suffix.
+release. The optional `-buildN` segment marks a rebuild of the same NSGI version
+(for example after a base-image or packaging fix): `2.2.0-build1-proj9.7.1`, or
+`2.2.0-rc3-build1-proj9.7.1` for an RC. The `pyproj` image tag remains based on the
+upstream pyproj version and includes the NSGI version and the optional RC and build suffixes.
 
 | Artifact | Example tag / filename | Versioned by |
 | :--- | :--- | :--- |
-| GitHub release / `ghcr.io/geodetischeinfrastructuur/transformations` | `2.2.0-proj9.7.1` (RC: `2.2.0-rc1-proj9.7.1`) | NSGI semver + PROJ version |
+| GitHub release / `ghcr.io/geodetischeinfrastructuur/transformations` | `2.2.0-proj9.7.1` (RC: `2.2.0-rc1-proj9.7.1`, rebuild: `2.2.0-build1-proj9.7.1`) | NSGI semver + PROJ version |
 | ↳ `proj.db` (GitHub release asset) | `proj.db` | same as above |
 | ↳ `proj.time.dependent.transformations.db` (GitHub release asset) | `proj.time.dependent.transformations.db` | same as above |
 | `ghcr.io/geodetischeinfrastructuur/pyproj` | `3.7.2-nsgi2.2.0` | pyproj version + NSGI semver |
 | ↳ `pyproj` wheel (GitHub release asset) | `pyproj-3.7.2+nsgi2.2.0-cp312-cp312-manylinux_2_28_x86_64.whl` | same as above |
 
-The wheel encodes the NSGI semver as a PEP 440 **local version** (`3.7.2+nsgi2.2.0`): it keeps the upstream public version `3.7.2` (so `pyproj==3.7.2` still matches) while recording the NSGI generation. RC wheels include the RC marker in that local version, e.g. `3.7.2+nsgi2.2.0rc1`; the final wheel is `3.7.2+nsgi2.2.0`. One wheel is published per supported CPython (`cp312`–`cp315`), and each wheel includes both databases. The standard database is in pyproj's default data directory; the time-dependent database is in the sibling `proj_time_dependent` directory.
+The wheel encodes the NSGI semver as a PEP 440 **local version** (`3.7.2+nsgi2.2.0`): it keeps the upstream public version `3.7.2` (so `pyproj==3.7.2` still matches) while recording the NSGI generation. RC wheels include the RC marker in that local version, e.g. `3.7.2+nsgi2.2.0rc1`; the final wheel is `3.7.2+nsgi2.2.0`. A rebuild adds a `.buildN` label (`3.7.2+nsgi2.2.0.build1`, or `3.7.2+nsgi2.2.0rc3.build1` for an RC). One wheel is published per supported CPython (`cp312`–`cp315`), and each wheel includes both databases. The standard database is in pyproj's default data directory; the time-dependent database is in the sibling `proj_time_dependent` directory.
 
 **Bumping rules** — `TRANSFORMATIONS_VERSION` follows semver:
 
@@ -71,13 +73,13 @@ The wheel encodes the NSGI semver as a PEP 440 **local version** (`3.7.2+nsgi2.2
 - PROJ version update → bump `PROJ_VERSION` (e.g. `2.0.0-proj9.7.2`)
 - pyproj version update → bump `PYPROJ_VERSION` (e.g. pyproj image `3.7.3-nsgi2.0.0`)
 
-Both images are always released together from a single GitHub release. The release tag leads with the NSGI semver and includes the PROJ version (`2.2.0-rc1-proj9.7.1` for an RC; `2.2.0-proj9.7.1` for final).
+Both images are always released together from a single GitHub release. The release tag leads with the NSGI semver and includes the PROJ version (`2.2.0-rc1-proj9.7.1` for an RC; `2.2.0-proj9.7.1` for final; add `-buildN` before `-proj` for a rebuild, e.g. `2.2.0-build1-proj9.7.1`).
 
 > **To create a new release:**
 > 1. Edit as needed:
 >    - [`Dockerfile`](Dockerfile) — for NSGI config changes or PROJ version updates: bump `ARG PROJ_VERSION` and/or `ARG TRANSFORMATIONS_VERSION`
 >    - [`pyproj/Dockerfile`](pyproj/Dockerfile) — only for pyproj version updates: bump `ARG PYPROJ_VERSION`
-> 2. Create and publish a GitHub release with tag matching `{TRANSFORMATIONS_VERSION}[-rcN]-proj{PROJ_VERSION}` (e.g. `2.1.0-proj9.7.1` or `2.2.0-rc1-proj9.7.1`). Mark RC releases as prereleases in GitHub.
+> 2. Create and publish a GitHub release with tag matching `{TRANSFORMATIONS_VERSION}[-rcN][-buildN]-proj{PROJ_VERSION}` (e.g. `2.1.0-proj9.7.1`, `2.2.0-rc1-proj9.7.1`, or `2.2.0-build1-proj9.7.1`). Mark RC releases as prereleases in GitHub.
 >
 > The release workflow:
 > - Reads `PROJ_VERSION` and `TRANSFORMATIONS_VERSION` from the root `Dockerfile`
@@ -86,6 +88,7 @@ Both images are always released together from a single GitHub release. The relea
 > - Passes PROJ version strings to pyproj build
 > - Uses the release tag for the transformations image and derives pyproj image tags from the Dockerfile versions
 > - Includes `rcN` in prerelease wheel versions and filenames (e.g. `+nsgi2.2.0rc1`)
+> - Includes `buildN` as a `.buildN` local-version label (e.g. `+nsgi2.2.0.build1`) and in the pyproj image tag
 
 ## Integration
 
@@ -260,7 +263,8 @@ Versions must match the build image; its `PYTHON_VERSION` build argument determi
 
 For a release candidate, set `TRANSFORMATIONS_PRERELEASE_SUFFIX=-rc1` when
 running the script; the wheel's local version will end in `rc1` (for example,
-`pyproj-3.7.2+nsgi2.2.0rc1-cp312-...whl`).
+`pyproj-3.7.2+nsgi2.2.0rc1-cp312-...whl`). Set `TRANSFORMATIONS_BUILD_SUFFIX=-build1`
+to add a `.build1` label (`pyproj-3.7.2+nsgi2.2.0rc1.build1-cp312-...whl`).
 
 For the technical details of wheel patching (RPATH fixes, RECORD hashing, NSGI data injection), see [pyproj/README.md](pyproj/README.md#wheel-build-via-docker-container).
 Before publishing, [test the repaired wheel in a clean runtime container](pyproj/README.md#step-3-test-the-repaired-wheel-in-a-clean-runtime), not only the build image: installed build dependencies can hide missing bundled libraries.

@@ -33,7 +33,7 @@ Use [`build-wheel.sh`](build-wheel.sh) as the single supported entry point for b
 2. **Wheel patching and repair (post-processing):**
    - Extract the wheel ZIP archive
    - **Inject NSGI data:** Put the standard database and grids in `pyproj/proj_dir/share/proj/`; copy that directory to `pyproj/proj_dir/share/proj_time_dependent/` and replace its `proj.db` with the time-dependent database
-   - **PEP 440 versioning:** Append a local version from `3.7.2` to `3.7.2+nsgi2.2.0`; for an RC, include its suffix, e.g. `3.7.2+nsgi2.2.0rc1`, in METADATA, the `.dist-info` directory, and the wheel filename
+   - **PEP 440 versioning:** Append a local version from `3.7.2` to `3.7.2+nsgi2.2.0`; for an RC, include its suffix, e.g. `3.7.2+nsgi2.2.0rc1`; for a rebuild, add `.buildN`, e.g. `3.7.2+nsgi2.2.0rc3.build1`, in METADATA, the `.dist-info` directory, and the wheel filename
    - **Recalculate RECORD:** Update SHA256 hashes for all files to match the wheel spec
    - **Repair with auditwheel:** `uvx --from auditwheel auditwheel repair --plat manylinux_2_28_x86_64` bundles libproj and its required non-policy dependencies (including TIFF and applicable transitive dependencies) into `pyproj.libs/`, patches ELF dependency references and library search paths, and updates platform tags and metadata. Libraries on auditwheel's manylinux policy list, such as glibc, are not bundled. The script replaces the patched wheel with the repaired output; only that final wheel should be published
 
@@ -159,7 +159,7 @@ Arguments are `<image-tag> <pyproj-version> <transformations-version> <proj-vers
 
 Relative output paths are resolved against `pyproj/`, so the default `../dist` is the repository-root `dist/` directory. **The script deletes existing `pyproj-*.whl` files from that output directory before building.** Use separate output directories to retain wheels for multiple Python versions.
 
-For a release candidate, use a matching prerelease build image and set `TRANSFORMATIONS_PRERELEASE_SUFFIX=-rc1` when running the script. The resulting local version ends in `rc1`, for example `3.7.2+nsgi2.2.0rc1`.
+For a release candidate, use a matching prerelease build image and set `TRANSFORMATIONS_PRERELEASE_SUFFIX=-rc1` when running the script. The resulting local version ends in `rc1`, for example `3.7.2+nsgi2.2.0rc1`. For a rebuild, also set `TRANSFORMATIONS_BUILD_SUFFIX=-build1`; the local version then ends in `.build1`, for example `3.7.2+nsgi2.2.0rc1.build1`.
 
 For packaging-only rebuilds (e.g., fixing wheel metadata without changing PROJ or NSGI data), pass an optional `build-suffix` argument (e.g., `.build.1`). This appends the suffix to the wheel version, e.g., `3.7.2+nsgi2.2.0.build.1`, making the rebuild explicit while preserving the original NSGI version. When no suffix is provided, wheels are versioned as usual.
 

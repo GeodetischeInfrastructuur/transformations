@@ -17,6 +17,7 @@ jobs:
       PROJ_VERSION: ${{ steps.versions.outputs.PROJ_VERSION }}
       TRANSFORMATIONS_VERSION: ${{ steps.versions.outputs.TRANSFORMATIONS_VERSION }}
       PRERELEASE_SUFFIX: ${{ steps.versions.outputs.PRERELEASE_SUFFIX }}
+      BUILD_SUFFIX: ${{ steps.versions.outputs.BUILD_SUFFIX }}
       PYPROJ_VERSION: ${{ steps.versions.outputs.PYPROJ_VERSION }}
       PYPROJ_IMAGE_TAG: ${{ steps.versions.outputs.PYPROJ_IMAGE_TAG }}
     steps:
@@ -46,7 +47,7 @@ jobs:
           PROJ_VERSION=$(grep -E '^ARG PROJ_VERSION=' Dockerfile | head -1 | cut -d= -f2)
           TRANSFORMATIONS_VERSION=$(grep -E '^ARG TRANSFORMATIONS_VERSION=' Dockerfile | head -1 | cut -d= -f2)
           PYPROJ_VERSION=$(grep -E '^ARG PYPROJ_VERSION=' pyproj/Dockerfile | head -1 | cut -d= -f2)
-          # Tags are <transformations-version>[-rcN]-proj<proj-version>.
+          # Tags are <transformations-version>[-rcN][-buildN]-proj<proj-version>.
           RELEASE_TAG="${{ github.event.release.tag_name }}"
           PROJ_SUFFIX="-proj${PROJ_VERSION}"
           if [[ "$RELEASE_TAG" != *"$PROJ_SUFFIX" ]]; then
@@ -54,23 +55,23 @@ jobs:
             exit 1
           fi
           TAG_VERSION="${RELEASE_TAG%"$PROJ_SUFFIX"}"
-          if [[ "$TAG_VERSION" == "$TRANSFORMATIONS_VERSION" ]]; then
-            PRERELEASE_SUFFIX=""
-          elif [[ "$TAG_VERSION" == "$TRANSFORMATIONS_VERSION"-rc* ]]; then
-            PRERELEASE_SUFFIX="${TAG_VERSION#"$TRANSFORMATIONS_VERSION"}"
-            if [[ ! "$PRERELEASE_SUFFIX" =~ ^-rc[0-9]+$ ]]; then
-              echo "ERROR: unsupported prerelease suffix '$PRERELEASE_SUFFIX'; expected -rcN."
-              exit 1
-            fi
-          else
+          if [[ "$TAG_VERSION" != "$TRANSFORMATIONS_VERSION"* ]]; then
             echo "ERROR: release tag '$RELEASE_TAG' does not start with TRANSFORMATIONS_VERSION '$TRANSFORMATIONS_VERSION'."
             exit 1
           fi
+          VERSION_SUFFIX="${TAG_VERSION#"$TRANSFORMATIONS_VERSION"}"
+          if [[ ! "$VERSION_SUFFIX" =~ ^(-rc[0-9]+)?(-build[0-9]+)?$ ]]; then
+            echo "ERROR: unsupported tag suffix '$VERSION_SUFFIX'; expected [-rcN][-buildN]."
+            exit 1
+          fi
+          PRERELEASE_SUFFIX="${BASH_REMATCH[1]}"
+          BUILD_SUFFIX="${BASH_REMATCH[2]}"
           echo "PROJ_VERSION=${PROJ_VERSION}" >> "$GITHUB_OUTPUT"
           echo "TRANSFORMATIONS_VERSION=${TRANSFORMATIONS_VERSION}" >> "$GITHUB_OUTPUT"
           echo "PYPROJ_VERSION=${PYPROJ_VERSION}" >> "$GITHUB_OUTPUT"
           echo "PRERELEASE_SUFFIX=${PRERELEASE_SUFFIX}" >> "$GITHUB_OUTPUT"
-          echo "PYPROJ_IMAGE_TAG=${PYPROJ_VERSION}-nsgi${TRANSFORMATIONS_VERSION}${PRERELEASE_SUFFIX}" >> "$GITHUB_OUTPUT"
+          echo "BUILD_SUFFIX=${BUILD_SUFFIX}" >> "$GITHUB_OUTPUT"
+          echo "PYPROJ_IMAGE_TAG=${PYPROJ_VERSION}-nsgi${TRANSFORMATIONS_VERSION}${PRERELEASE_SUFFIX}${BUILD_SUFFIX}" >> "$GITHUB_OUTPUT"
 
       - name: "Verify release tag matches Dockerfile versions"
         shell: bash
@@ -78,7 +79,8 @@ jobs:
           PROJ_VERSION="${{ steps.versions.outputs.PROJ_VERSION }}"
           TRANSFORMATIONS_VERSION="${{ steps.versions.outputs.TRANSFORMATIONS_VERSION }}"
           PRERELEASE_SUFFIX="${{ steps.versions.outputs.PRERELEASE_SUFFIX }}"
-          EXPECTED_TAG="${TRANSFORMATIONS_VERSION}${PRERELEASE_SUFFIX}-proj${PROJ_VERSION}"
+          BUILD_SUFFIX="${{ steps.versions.outputs.BUILD_SUFFIX }}"
+          EXPECTED_TAG="${TRANSFORMATIONS_VERSION}${PRERELEASE_SUFFIX}${BUILD_SUFFIX}-proj${PROJ_VERSION}"
           ACTUAL_TAG="${{ github.event.release.tag_name }}"
           if [[ "$ACTUAL_TAG" != "$EXPECTED_TAG" ]]; then
             echo "ERROR: release tag '$ACTUAL_TAG' does not match Dockerfile versions."
@@ -98,10 +100,12 @@ jobs:
       - name: "Build transformations image"
         env:
           TRANSFORMATIONS_PRERELEASE_SUFFIX: ${{ steps.versions.outputs.PRERELEASE_SUFFIX }}
+          TRANSFORMATIONS_BUILD_SUFFIX: ${{ steps.versions.outputs.BUILD_SUFFIX }}
         run: |
           docker build . \
             --build-arg TRANSFORMATIONS_VERSION="${{ steps.versions.outputs.TRANSFORMATIONS_VERSION }}" \
             --build-arg TRANSFORMATIONS_PRERELEASE_SUFFIX="${TRANSFORMATIONS_PRERELEASE_SUFFIX}" \
+            --build-arg TRANSFORMATIONS_BUILD_SUFFIX="${TRANSFORMATIONS_BUILD_SUFFIX}" \
             --tag ghcr.io/${{ steps.lowercaserepo.outputs.REPO_LC }}:${{ github.event.release.tag_name }}
           docker push ghcr.io/${{ steps.lowercaserepo.outputs.REPO_LC }}:${{ github.event.release.tag_name }}
           if [[ "${{ github.event.release.prerelease }}" == "false" ]]; then
@@ -201,6 +205,7 @@ jobs:
           PROJ_VERSION: ${{ needs.build-and-push-image.outputs.PROJ_VERSION }}
           TRANSFORMATIONS_VERSION: ${{ needs.build-and-push-image.outputs.TRANSFORMATIONS_VERSION }}
           TRANSFORMATIONS_PRERELEASE_SUFFIX: ${{ needs.build-and-push-image.outputs.PRERELEASE_SUFFIX }}
+          TRANSFORMATIONS_BUILD_SUFFIX: ${{ needs.build-and-push-image.outputs.BUILD_SUFFIX }}
           PYNODOT: ${{ steps.pytag.outputs.PYNODOT }}
         run: |
           IMAGE_TAG="${PYPROJ_IMAGE_TAG}-py${PYNODOT}"
@@ -215,6 +220,7 @@ jobs:
             --build-arg PROJ_VERSION=${PROJ_VERSION} \
             --build-arg TRANSFORMATIONS_VERSION=${TRANSFORMATIONS_VERSION} \
             --build-arg TRANSFORMATIONS_PRERELEASE_SUFFIX=${TRANSFORMATIONS_PRERELEASE_SUFFIX} \
+            --build-arg TRANSFORMATIONS_BUILD_SUFFIX=${TRANSFORMATIONS_BUILD_SUFFIX} \
             --build-arg PYTHON_VERSION=${{ matrix.python }} \
             --tag ghcr.io/${OWNER_LC}/pyproj:${IMAGE_TAG}
           docker push ghcr.io/${OWNER_LC}/pyproj:${IMAGE_TAG}
@@ -236,19 +242,13 @@ jobs:
           PYPROJ_VERSION: ${{ needs.build-and-push-image.outputs.PYPROJ_VERSION }}
           TRANSFORMATIONS_VERSION: ${{ needs.build-and-push-image.outputs.TRANSFORMATIONS_VERSION }}
           TRANSFORMATIONS_PRERELEASE_SUFFIX: ${{ needs.build-and-push-image.outputs.PRERELEASE_SUFFIX }}
+          TRANSFORMATIONS_BUILD_SUFFIX: ${{ needs.build-and-push-image.outputs.BUILD_SUFFIX }}
           PROJ_VERSION: ${{ needs.build-and-push-image.outputs.PROJ_VERSION }}
           PYNODOT: ${{ steps.pytag.outputs.PYNODOT }}
         run: |
           chmod +x pyproj/build-wheel.sh
           IMAGE="ghcr.io/${OWNER_LC}/pyproj:${PYPROJ_IMAGE_TAG}-py${PYNODOT}"
-          # Extract optional .build.X suffix from release tag (e.g., 2.2.0-proj9.7.1.build.1)
-          RELEASE_TAG="${{ github.event.release.tag_name }}"
-          if [[ "$RELEASE_TAG" =~ (\.[Bb][Uu][Ii][Ll][Dd]\.[0-9]+)$ ]]; then
-            BUILD_SUFFIX="${BASH_REMATCH[1]}"
-          else
-            BUILD_SUFFIX=""
-          fi
-          pyproj/build-wheel.sh "$IMAGE" "$PYPROJ_VERSION" "$TRANSFORMATIONS_VERSION" "$PROJ_VERSION" "../dist" "$BUILD_SUFFIX"
+          pyproj/build-wheel.sh "$IMAGE" "$PYPROJ_VERSION" "$TRANSFORMATIONS_VERSION" "$PROJ_VERSION" "../dist"
 
       - name: "Smoke test: validate transformations (Python ${{ matrix.python }})"
         env:

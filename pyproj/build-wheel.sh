@@ -2,16 +2,17 @@
 # Build a custom pyproj wheel with NSGI transformations and bundled PROJ.
 #
 # Usage:
-#   pyproj/build-wheel.sh <pyproj-image-tag> <pyproj-version> <transformations-version> <proj-version> [output-dir] [build-suffix]
+#   [TRANSFORMATIONS_PRERELEASE_SUFFIX=-rcN] [TRANSFORMATIONS_BUILD_SUFFIX=-buildN] \
+#     pyproj/build-wheel.sh <pyproj-image-tag> <pyproj-version> <transformations-version> <proj-version> [output-dir]
 #
 # Example:
 #   pyproj/build-wheel.sh ghcr.io/geodetischeinfrastructuur/pyproj:3.7.2-nsgi2.0.0 3.7.2 2.0.0 9.7.1 ../dist
-#   pyproj/build-wheel.sh ghcr.io/geodetischeinfrastructuur/pyproj:3.7.2-nsgi2.0.0 3.7.2 2.0.0 9.7.1 ../dist .build.1
+#   TRANSFORMATIONS_BUILD_SUFFIX=-build1 pyproj/build-wheel.sh ghcr.io/geodetischeinfrastructuur/pyproj:3.7.2-nsgi2.0.0-build1 3.7.2 2.0.0 9.7.1 ../dist
 
 set -euo pipefail
 
 if [[ $# -lt 4 ]]; then
-    echo "Usage: $0 <pyproj-image-tag> <pyproj-version> <transformations-version> <proj-version> [output-dir] [build-suffix]"
+    echo "Usage: $0 <pyproj-image-tag> <pyproj-version> <transformations-version> <proj-version> [output-dir]"
     echo ""
     echo "Arguments:"
     echo "  pyproj-image-tag        Docker image tag to use for wheel building (e.g., ghcr.io/geodetischeinfrastructuur/pyproj:3.7.2-nsgi2.0.0)"
@@ -19,7 +20,10 @@ if [[ $# -lt 4 ]]; then
     echo "  transformations-version NSGI transformations semver, becomes the +nsgi local version (e.g., 2.0.0)"
     echo "  proj-version            PROJ version to bundle and use (e.g., 9.7.1)"
     echo "  output-dir              Output directory for wheel (default: ../dist)"
-    echo "  build-suffix            Optional build suffix appended after NSGI version (e.g., .build.1). If omitted, no suffix is added."
+    echo ""
+    echo "Environment:"
+    echo "  TRANSFORMATIONS_PRERELEASE_SUFFIX  Optional RC suffix, e.g. -rc1 (wheel version gets rc1)"
+    echo "  TRANSFORMATIONS_BUILD_SUFFIX       Optional build suffix, e.g. -build1 (wheel version gets .build1)"
     exit 1
 fi
 
@@ -28,9 +32,12 @@ PYPROJ_VERSION="$2"
 TRANSFORMATIONS_VERSION="$3"
 PROJ_VERSION="$4"
 OUTPUT_DIR="${5:-../dist}"
-BUILD_SUFFIX="${6:-}"
 TRANSFORMATIONS_PRERELEASE_SUFFIX="${TRANSFORMATIONS_PRERELEASE_SUFFIX:-}"
+TRANSFORMATIONS_BUILD_SUFFIX="${TRANSFORMATIONS_BUILD_SUFFIX:-}"
 WHEEL_PRERELEASE_SUFFIX="${TRANSFORMATIONS_PRERELEASE_SUFFIX#-}"
+# -build1 -> .build1 (PEP 440 local version segments are dot-separated)
+BUILD_SUFFIX=""
+[[ -n "$TRANSFORMATIONS_BUILD_SUFFIX" ]] && BUILD_SUFFIX=".${TRANSFORMATIONS_BUILD_SUFFIX#-}"
 WHEEL_VERSION_SUFFIX="+nsgi${TRANSFORMATIONS_VERSION}${WHEEL_PRERELEASE_SUFFIX}${BUILD_SUFFIX}"
 
 # Get the directory where this script is located
@@ -160,13 +167,13 @@ with tempfile.TemporaryDirectory() as tmp:
     filename_suffix = ""
     if transformations_version:
         filename_suffix += f"+nsgi{transformations_version}{prerelease_suffix}"
-    # Optionally append build suffix (e.g., .build.1) after NSGI version
+    # Optionally append build suffix (e.g., .build1) after NSGI version
     if build_suffix:
         filename_suffix += build_suffix
 
     # Always update METADATA and dist-info when we have a transformations version
     if transformations_version:
-        # PEP 440 local version for METADATA and wheel: 3.7.2+nsgi2.0.0[rcN][.build.N].
+        # PEP 440 local version for METADATA and wheel: 3.7.2+nsgi2.0.0[rcN][.buildN].
         # Keep the upstream public version and encode NSGI build identity locally.
         pep440_suffix = f"+nsgi{transformations_version}{prerelease_suffix}"
         # Optionally append build suffix after the NSGI version
