@@ -1,0 +1,28 @@
+# Build PROJ library once, then reuse for all Python ABI versions.
+# This image is intermediate and tagged by PROJ_VERSION only, not published as a final artifact.
+# Build context: Must be run from repository root with:
+#   docker build . -f pyproj/Dockerfile.proj-base --build-arg PROJ_VERSION=...
+#
+ARG PROJ_VERSION
+
+# manylinux_2_28 (AlmaLinux 8, glibc 2.28): wheels built here run on glibc >= 2.28
+FROM quay.io/pypa/manylinux_2_28_x86_64
+
+ARG PROJ_VERSION
+
+WORKDIR /app
+
+# build PROJ from source: libcurl-minimal keeps TLS via OpenSSL without LDAP/SSH/libpsl,
+# and libstdc++/libgcc are linked statically so libproj needs no GLIBCXX symbols from the host
+RUN yum -y swap libcurl libcurl-minimal \
+    && yum install -y curl cmake sqlite sqlite-devel libtiff-devel libcurl-devel openssl-devel \
+    && yum clean all
+RUN curl -fsSL "https://download.osgeo.org/proj/proj-${PROJ_VERSION}.tar.gz" | tar -xz -C /tmp \
+    && cmake -S "/tmp/proj-${PROJ_VERSION}" -B /tmp/proj-build \
+       -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_INSTALL_LIBDIR=lib \
+       -DBUILD_TESTING=OFF -DBUILD_APPS=OFF -DENABLE_CURL=ON -DENABLE_TIFF=ON \
+       -DCMAKE_SHARED_LINKER_FLAGS="-static-libstdc++ -static-libgcc" \
+    && cmake --build /tmp/proj-build -j"$(nproc)" \
+    && cmake --install /tmp/proj-build \
+    && rm -rf /tmp/proj-* \
+    && echo /usr/local/lib > /etc/ld.so.conf.d/proj.conf && ldconfig

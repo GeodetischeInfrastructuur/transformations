@@ -133,8 +133,45 @@ jobs:
         run: |
           gh release upload ${{ github.event.release.tag_name }} proj.time.dependent.transformations.db
 
+  build-proj-base:
+    runs-on: ubuntu-latest
+    outputs:
+      PROJ_VERSION: ${{ steps.versions.outputs.PROJ_VERSION }}
+      OWNER_LC: ${{ steps.lowercaserepo.outputs.OWNER_LC }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: "Login to GitHub Container Registry"
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{github.actor}}
+          password: ${{secrets.GITHUB_TOKEN}}
+
+      - name: Lowercase org/repo
+        shell: bash
+        id: lowercaserepo
+        run: |
+          OWNER_LC=${{ github.repository_owner }}
+          echo "OWNER_LC=${OWNER_LC,,}" >> "$GITHUB_OUTPUT"
+
+      - name: "Extract PROJ_VERSION"
+        id: versions
+        shell: bash
+        run: |
+          PROJ_VERSION=$(grep -E '^ARG PROJ_VERSION=' Dockerfile | head -1 | cut -d= -f2)
+          echo "PROJ_VERSION=${PROJ_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: "Build and push PROJ base image"
+        run: |
+          docker build . -f pyproj/Dockerfile.proj-base \
+            --build-arg PROJ_VERSION=${{ steps.versions.outputs.PROJ_VERSION }} \
+            --tag ghcr.io/${{ steps.lowercaserepo.outputs.OWNER_LC }}/pyproj-proj-base:${{ steps.versions.outputs.PROJ_VERSION }}
+          docker push ghcr.io/${{ steps.lowercaserepo.outputs.OWNER_LC }}/pyproj-proj-base:${{ steps.versions.outputs.PROJ_VERSION }}
+
   build-wheels:
-    needs: build-and-push-image
+    needs: [build-and-push-image, build-proj-base]
     runs-on: ubuntu-latest
     strategy:
       # Don't cancel other Python legs if one version fails to build.
@@ -167,9 +204,12 @@ jobs:
           PYNODOT: ${{ steps.pytag.outputs.PYNODOT }}
         run: |
           IMAGE_TAG="${PYPROJ_IMAGE_TAG}-py${PYNODOT}"
+          PROJ_BASE_IMAGE="ghcr.io/${OWNER_LC}/pyproj-proj-base:${PROJ_VERSION}"
+          # Reuse PROJ base image (built in parallel) to avoid recompiling for each Python ABI
           # Pull the transformations image (pushed by the previous job) from ghcr.
           docker build . \
             -f pyproj/Dockerfile \
+            --build-arg PROJ_BASE_IMAGE="${PROJ_BASE_IMAGE}" \
             --build-arg TRANSFORMATION_IMAGE_SOURCE=ghcr.io/geodetischeinfrastructuur/ \
             --build-arg TRANSFORMATION_IMAGE_TAG=${{ github.event.release.tag_name }} \
             --build-arg PROJ_VERSION=${PROJ_VERSION} \
