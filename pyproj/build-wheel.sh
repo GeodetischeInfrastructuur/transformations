@@ -2,15 +2,16 @@
 # Build a custom pyproj wheel with NSGI transformations and bundled PROJ.
 #
 # Usage:
-#   pyproj/build-wheel.sh <pyproj-image-tag> <pyproj-version> <transformations-version> <proj-version> [output-dir]
+#   pyproj/build-wheel.sh <pyproj-image-tag> <pyproj-version> <transformations-version> <proj-version> [output-dir] [build-suffix]
 #
 # Example:
 #   pyproj/build-wheel.sh ghcr.io/geodetischeinfrastructuur/pyproj:3.7.2-nsgi2.0.0 3.7.2 2.0.0 9.7.1 ../dist
+#   pyproj/build-wheel.sh ghcr.io/geodetischeinfrastructuur/pyproj:3.7.2-nsgi2.0.0 3.7.2 2.0.0 9.7.1 ../dist .build.1
 
 set -euo pipefail
 
 if [[ $# -lt 4 ]]; then
-    echo "Usage: $0 <pyproj-image-tag> <pyproj-version> <transformations-version> <proj-version> [output-dir]"
+    echo "Usage: $0 <pyproj-image-tag> <pyproj-version> <transformations-version> <proj-version> [output-dir] [build-suffix]"
     echo ""
     echo "Arguments:"
     echo "  pyproj-image-tag        Docker image tag to use for wheel building (e.g., ghcr.io/geodetischeinfrastructuur/pyproj:3.7.2-nsgi2.0.0)"
@@ -18,6 +19,7 @@ if [[ $# -lt 4 ]]; then
     echo "  transformations-version NSGI transformations semver, becomes the +nsgi local version (e.g., 2.0.0)"
     echo "  proj-version            PROJ version to bundle and use (e.g., 9.7.1)"
     echo "  output-dir              Output directory for wheel (default: ../dist)"
+    echo "  build-suffix            Optional build suffix appended after NSGI version (e.g., .build.1). If omitted, no suffix is added."
     exit 1
 fi
 
@@ -26,9 +28,10 @@ PYPROJ_VERSION="$2"
 TRANSFORMATIONS_VERSION="$3"
 PROJ_VERSION="$4"
 OUTPUT_DIR="${5:-../dist}"
+BUILD_SUFFIX="${6:-}"
 TRANSFORMATIONS_PRERELEASE_SUFFIX="${TRANSFORMATIONS_PRERELEASE_SUFFIX:-}"
 WHEEL_PRERELEASE_SUFFIX="${TRANSFORMATIONS_PRERELEASE_SUFFIX#-}"
-WHEEL_VERSION_SUFFIX="+nsgi${TRANSFORMATIONS_VERSION}${WHEEL_PRERELEASE_SUFFIX}"
+WHEEL_VERSION_SUFFIX="+nsgi${TRANSFORMATIONS_VERSION}${WHEEL_PRERELEASE_SUFFIX}${BUILD_SUFFIX}"
 
 # Get the directory where this script is located
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -48,6 +51,7 @@ echo "  Image: $PYPROJ_IMAGE_TAG"
 echo "  PyProj Version: $PYPROJ_VERSION"
 echo "  Transformations Version: $TRANSFORMATIONS_VERSION"
 echo "  Prerelease Suffix: ${TRANSFORMATIONS_PRERELEASE_SUFFIX:-none}"
+echo "  Build Suffix: ${BUILD_SUFFIX:-none}"
 echo "  Output: $ABS_OUTPUT_DIR"
 echo ""
 
@@ -116,8 +120,9 @@ if not py_dirs:
 data_src = py_dirs[0] / "site-packages/pyproj/proj_dir/share/proj"
 transformations_version = os.environ.get("TRANSFORMATIONS_VERSION", "")
 prerelease_suffix = os.environ.get("TRANSFORMATIONS_PRERELEASE_SUFFIX", "").removeprefix("-")
+build_suffix = os.environ.get("BUILD_SUFFIX", "")
 print(f"[DEBUG] Processing raw wheel: {wheel.name}", flush=True)
-print(f"[DEBUG] TRANSFORMATIONS_VERSION={transformations_version}, PRERELEASE_SUFFIX={prerelease_suffix}", flush=True)
+print(f"[DEBUG] TRANSFORMATIONS_VERSION={transformations_version}, PRERELEASE_SUFFIX={prerelease_suffix}, BUILD_SUFFIX={build_suffix}", flush=True)
 
 with tempfile.TemporaryDirectory() as tmp:
     tmp = Path(tmp)
@@ -155,12 +160,18 @@ with tempfile.TemporaryDirectory() as tmp:
     filename_suffix = ""
     if transformations_version:
         filename_suffix += f"+nsgi{transformations_version}{prerelease_suffix}"
+    # Optionally append build suffix (e.g., .build.1) after NSGI version
+    if build_suffix:
+        filename_suffix += build_suffix
 
     # Always update METADATA and dist-info when we have a transformations version
     if transformations_version:
-        # PEP 440 local version for METADATA and wheel: 3.7.2+nsgi2.0.0[rcN].
+        # PEP 440 local version for METADATA and wheel: 3.7.2+nsgi2.0.0[rcN][.build.N].
         # Keep the upstream public version and encode NSGI build identity locally.
         pep440_suffix = f"+nsgi{transformations_version}{prerelease_suffix}"
+        # Optionally append build suffix after the NSGI version
+        if build_suffix:
+            pep440_suffix += build_suffix
 
         # Append the local version to Version: in METADATA.
         metadata = dist_info / "METADATA"
@@ -216,6 +227,7 @@ PYEOF
 docker run --rm \
   -e TRANSFORMATIONS_VERSION="$TRANSFORMATIONS_VERSION" \
   -e TRANSFORMATIONS_PRERELEASE_SUFFIX="$TRANSFORMATIONS_PRERELEASE_SUFFIX" \
+  -e BUILD_SUFFIX="$BUILD_SUFFIX" \
   -v "$ABS_OUTPUT_DIR:/dist" \
   -v "/tmp/inject_proj_data.py:/inject_proj_data.py:ro" \
   "$PYPROJ_IMAGE_TAG" \

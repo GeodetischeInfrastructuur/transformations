@@ -20,7 +20,7 @@ RUN yum -y swap libcurl libcurl-minimal \
 RUN curl -fsSL "https://download.osgeo.org/proj/proj-${PROJ_VERSION}.tar.gz" | tar -xz -C /tmp \
     && cmake -S "/tmp/proj-${PROJ_VERSION}" -B /tmp/proj-build \
        -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_INSTALL_LIBDIR=lib \
-       -DBUILD_TESTING=OFF -DBUILD_APPS=OFF -DENABLE_CURL=ON -DENABLE_TIFF=ON \
+       -DBUILD_TESTING=OFF -DBUILD_APPS=ON -DENABLE_CURL=ON -DENABLE_TIFF=ON \
        -DCMAKE_SHARED_LINKER_FLAGS="-static-libstdc++ -static-libgcc" \
     && cmake --build /tmp/proj-build -j"$(nproc)" \
     && cmake --install /tmp/proj-build \
