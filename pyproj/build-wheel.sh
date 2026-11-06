@@ -219,8 +219,22 @@ docker run --rm \
   -v "$ABS_OUTPUT_DIR:/dist" \
   -v "/tmp/inject_proj_data.py:/inject_proj_data.py:ro" \
   "$PYPROJ_IMAGE_TAG" \
-  sh -c 'python3 /inject_proj_data.py && uvx auditwheel repair --plat manylinux_2_28_x86_64 -w /dist/repaired /dist/pyproj-*+nsgi*.whl && rm -f /dist/pyproj-*+nsgi*.whl && mv /dist/repaired/*.whl /dist/ && rmdir /dist/repaired' || {
-  echo "ERROR: Python injection script failed!"
+  sh -ec '
+    # Inject NSGI data and update the package version.
+    python3 /inject_proj_data.py
+
+    # Bundle PROJ and its non-manylinux-policy dependencies, including TIFF.
+    uvx --from auditwheel auditwheel repair \
+      --plat manylinux_2_28_x86_64 \
+      --wheel-dir /dist/repaired \
+      /dist/pyproj-*+nsgi*.whl
+
+    # Publish only the repaired wheel.
+    rm -f /dist/pyproj-*+nsgi*.whl
+    mv /dist/repaired/*.whl /dist/
+    rmdir /dist/repaired
+  ' || {
+  echo "ERROR: Wheel injection or auditwheel repair failed!"
   echo "Wheels in $ABS_OUTPUT_DIR:"
   ls -lh "$ABS_OUTPUT_DIR"/pyproj*.whl 2>/dev/null || echo "No wheels found"
   exit 1
